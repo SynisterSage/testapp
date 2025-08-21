@@ -1,0 +1,81 @@
+/* Compact density just for the Kit page */
+.kit--compact {
+  --k-font: 14px;
+  --k-sub: 12px;
+  --k-pad: 12px;
+  --k-gap: 8px;
+  --k-radius: 14px;
+  --k-icon: 20px;
+  --k-arrow: 18px;
+}
+
+/* Header row */
+.kit--compact .dash-welcome { margin: 6px 0 10px; }
+.kit--compact .tile-title { font-size: 16px; }
+.kit--compact .tile-sub { font-size: var(--k-sub); opacity: .75; }
+
+/* Panels / cards */
+.kit--compact .panel { padding: var(--k-pad); border-radius: var(--k-radius); }
+.kit--compact .list-stack .panel + .panel { margin-top: 8px; }
+
+/* Templates tile — tighter */
+.kit--compact .dash-tile { margin-bottom: 10px; }
+.kit--compact .dash-tile .tile-head { margin-bottom: 8px; }
+.kit--compact .dash-tile .tile-icon { font-size: 18px; }
+.kit--compact .dash-tile .action-chip {
+  padding: 6px 10px;
+  font-size: 12px;
+  height: 28px;
+  border-radius: 999px;
+}
+.kit--compact .dash-tile .tile-arrow { width: var(--k-arrow); height: var(--k-arrow); font-size: 16px; opacity: .6; }
+
+/* List cards — one-line, smaller icon, small subline */
+.kit--compact .list-card {
+  display: flex; align-items: center;
+  min-height: 56px;
+  padding: 10px 12px;
+}
+.kit--compact .list-card .list-left .tile-icon { font-size: var(--k-icon); }
+.kit--compact .list-card .list-main { line-height: 1.15; }
+.kit--compact .list-card .list-title { font-size: 15px; font-weight: 600; }
+.kit--compact .list-card .list-sub { font-size: var(--k-sub); opacity: .8; margin-top: 2px; }
+.kit--compact .list-card .tile-arrow { width: var(--k-arrow); height: var(--k-arrow); font-size: 16px; opacity: .6; }
+
+/* “Add Drum” row matches density */
+.kit--compact .list-card .tile-icon:empty { width: var(--k-icon); }
+
+/* Bottom sheet stays reasonable height */
+.kit--compact .sheet-card { max-height: 82vh; }
+/* Header row icon + title only */
+.kit--compact .tile-head.tile-head--row {
+  display: grid;
+  grid-template-columns: 36px auto;
+  align-items: center;
+  column-gap: 10px;
+}
+.kit--compact .tile-head.tile-head--row .tile-title {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+/* Subtitle sits UNDER the header and aligns with chips/left padding */
+.kit--compact .tile-sub--below {
+  margin-top: 4px;
+  font-size: 14px;
+  opacity: .9;
+}
+
+/* Pills scroll — no fade */
+.kit--compact .template-chips { -webkit-mask-image: none !important; mask-image: none !important; }
+
+/* Ensure Add-Drum chevron-in-circle is centered */
+.kit--compact .list-card--add { display: flex; align-items: center; }
+.kit--compact .list-card--add .tile-arrow--circle {
+  display: grid !important; place-items: center;
+  width: 28px; height: 28px; border-radius: 999px;
+  margin-left: auto; align-self: center;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+}
+.kit--compact .list-card--add .tile-arrow--circle svg { display: block; }

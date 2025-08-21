@@ -41,6 +41,15 @@ function useClock() {
   return `${h12}:${mins} ${ampm}`;
 }
 
+/** Prefer batter first; if batter done, pick reso. */
+function pickUndoneHeadFor(drum, doneSet) {
+  if (!drum) return "batter";
+  const b = doneSet.has(`${drum.id}-batter`);
+  const r = doneSet.has(`${drum.id}-reso`);
+  if (b && !r) return "reso";
+  return "batter";
+}
+
 export default function Tuner() {
   const { state, actions } = useAppStore();
   const navigate = useNavigate();
@@ -55,7 +64,7 @@ export default function Tuner() {
   // Head selection
   const [head, setHead] = useState("batter"); // 'batter' | 'reso'
 
-  // Tuning params (forgiving while testing)
+  // Tuning params
   const baseLock = state.settings.lockCents ?? 5;
   const lockWindow = baseLock + 4;
   const holdMs = state.settings.holdMs ?? 300;
@@ -78,11 +87,16 @@ export default function Tuner() {
   const analyserRef = useRef(null);
   const rafRef = useRef(null);
   const ctxRef = useRef(null);
+  const streamRef = useRef(null);
   const [reading, setReading] = useState({ hz: 0, cents: 0, level: 0 });
+
+  // Mic status: 'idle' | 'loading' | 'ok' | 'denied' | 'unavailable' | 'noinput' | 'error'
+  const [micStatus, setMicStatus] = useState("idle");
+  const [micKey, setMicKey] = useState(0); // to retry init
 
   // LOCKED label under the bar
   const [justLocked, setJustLocked] = useState(false);
-  useEffect(() => { setJustLocked(false); }, [activeId, head]); // reset on instrument/head change
+  useEffect(() => { setJustLocked(false); }, [activeId, head]);
 
   // Keep active chip centered
   const activeChipRef = useRef(null);
@@ -91,12 +105,35 @@ export default function Tuner() {
   }, [activeId]);
 
   useEffect(() => {
-    if (!hasKit || !active) return () => {};
+    if (!hasKit || !active) {
+      setMicStatus("idle");
+      return () => {};
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicStatus("unavailable");
+      return () => {};
+    }
+
+    setMicStatus("loading");
+
     let canceled = false;
     (async () => {
       try {
+        // Optional pre-check
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          const hasInput = devs.some(d => d.kind === "audioinput");
+          if (!hasInput) {
+            setMicStatus("noinput");
+            return;
+          }
+        } catch {}
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         if (canceled) return;
+        streamRef.current = stream;
+
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         ctxRef.current = ctx;
 
@@ -107,6 +144,8 @@ export default function Tuner() {
 
         src.connect(hp); hp.connect(lp); lp.connect(analyser);
         const buf = new Float32Array(analyser.fftSize);
+
+        setMicStatus("ok");
 
         let last = performance.now();
         const loop = () => {
@@ -122,20 +161,31 @@ export default function Tuner() {
           onFrame(hz, cents, loud, dt);
         };
         loop();
-      } catch (e) { console.warn("Mic denied or audio init failed", e); }
+      } catch (e) {
+        const n = e && (e.name || "");
+        if (n === "NotAllowedError" || n === "SecurityError") setMicStatus("denied");
+        else if (n === "NotFoundError") setMicStatus("noinput");
+        else setMicStatus("error");
+      }
     })();
 
     return () => {
       canceled = true;
-      cancelAnimationFrame(rafRef.current);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       try { ctxRef.current && ctxRef.current.close(); } catch {}
+      try {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+        }
+      } catch {}
     };
-  }, [hasKit, activeId, bpLow, bpHigh, rmsThreshold, targetHz]);
+  }, [hasKit, activeId, bpLow, bpHigh, rmsThreshold, targetHz, micKey]);
 
   // Guided lock
   const zoneMsRef = useRef(0);
   const lockedKeyRef = useRef(null);
-  const doneSet = useRef(new Set()); // keys like `${id}-batter` / `${id}-reso`
+  const doneSet = useRef(new Set()); // `${id}-batter` / `${id}-reso`
 
   function onFrame(hz, cents, loud, dtMs) {
     if (!active || !targetHz || !hz || !loud) { zoneMsRef.current = 0; return; }
@@ -157,22 +207,55 @@ export default function Tuner() {
           cents
         });
 
-        if (autoAdvance) setTimeout(() => goNext(), 800);
+        if (autoAdvance) {
+          const hasB = doneSet.current.has(`${active.id}-batter`);
+          const hasR = doneSet.current.has(`${active.id}-reso`);
+          if (hasB && hasR) {
+            setTimeout(() => goNext(), 800);         // both heads done → next drum
+          } else {
+            const nextHead = hasB ? "reso" : "batter"; // flip head on same drum
+            setTimeout(() => setHead(nextHead), 600);
+          }
+        }
       }
     } else {
       zoneMsRef.current = 0;
     }
   }
 
-  // Navigation
+  // Navigation – pick unfinished head when switching drums
   function goIndex(i) {
-    const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-    const idx = clamp(i, 0, Math.max(0, drums.length - 1));
-    const id = drums[idx]?.id;
-    if (id) { lockedKeyRef.current = null; actions.setActiveDrumId(id); }
+    const clampIdx = (n, a, b) => Math.max(a, Math.min(b, n));
+    const idx = clampIdx(i, 0, Math.max(0, drums.length - 1));
+    const drum = drums[idx];
+    if (drum) {
+      const nextHead = pickUndoneHeadFor(drum, doneSet.current);
+      lockedKeyRef.current = null;
+      actions.setActiveDrumId(drum.id);
+      setHead(nextHead);
+    }
   }
   function goNext() { goIndex(activeIndex + 1 >= drums.length ? activeIndex : activeIndex + 1); }
   function goPrev() { goIndex(activeIndex - 1); }
+
+  // mic warning empty-state (like no-kit)
+  const showMicWarning = hasKit && ["denied", "unavailable", "noinput", "error"].includes(micStatus);
+  const micMsg =
+    micStatus === "denied"      ? "Microphone access is blocked" :
+    micStatus === "unavailable" ? "Microphone not supported in this browser" :
+    micStatus === "noinput"     ? "No microphone input found" :
+    "Could not start microphone";
+
+  // small purple buttons
+  const purpleBtn = {
+    background: "var(--accent-purple, #9B87FF)",
+    color: "white",
+  };
+  const purpleGhost = {
+    border: "1px solid rgba(157,141,255,0.5)",
+    color: "var(--accent-purple, #9B87FF)",
+    background: "transparent",
+  };
 
   if (!hasKit) {
     return (
@@ -193,8 +276,36 @@ export default function Tuner() {
     );
   }
 
+  if (showMicWarning) {
+    return (
+      <div className="tuner-page">
+        <div className="dash-top">
+          <div>
+            <div className="brand-tag-title">OVERTONE</div>
+            <div className="brand-tag-sub">Mobile Drum Tuner</div>
+          </div>
+          <button className="top-gear" onClick={() => navigate("/settings")}>⚙︎</button>
+        </div>
+        <div className="dash-welcome" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+          <div className="tile-title">Tuner</div>
+          <div className="top-clock">{clock}</div>
+        </div>
 
-  
+        <div className="tuner-empty" style={{textAlign:"center"}}>
+          <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>No microphone found</div>
+          <div style={{opacity:.8, marginBottom:12}}>{micMsg}</div>
+          <div style={{display:"flex", gap:8, justifyContent:"center"}}>
+            <button className="primary-btn" style={purpleBtn} onClick={() => setMicKey(k => k + 1)}>Retry</button>
+            <button className="ghost-btn" style={purpleGhost} onClick={() => navigate("/settings")}>Settings</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // small visual bias so the needle aligns with the center label/green zone
+  const centerBiasPct = 1.25; // tweak if your UI shifts slightly
+
   return (
     <div className="tuner-page">
       {/* top header like Home */}
@@ -276,11 +387,16 @@ export default function Tuner() {
         </div>
         <div className="cents-bar cents-bar--accent">
           <div className="cents-green" />
-          <div className="cents-needle" style={{ left: `${Math.max(0, Math.min(100, 50 + (reading.cents / 50) * 50))}%` }} />
+          <div
+            className="cents-needle"
+            style={{
+              left: `${Math.max(0, Math.min(100, centerBiasPct + 50 + (reading.cents / 50) * 50))}%`
+            }}
+          />
         </div>
 
         <div className={`cents-readout ${justLocked ? "cents-readout--locked" : ""}`}>
-          {justLocked ? "LOCKED ✓" : "adjust"}
+          {justLocked ? "LOCKED ✓" : (micStatus === "ok" ? "adjust" : "mic off")}
         </div>
       </div>
     </div>

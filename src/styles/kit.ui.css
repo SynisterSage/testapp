@@ -1,0 +1,174 @@
+/* =========================
+   KIT PAGE — UI POLISH
+   ========================= */
+
+/* --- Page title to match Home --- */
+.kit--compact .kit-page-title {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+/* ---------- Shared icon sizing & centering ---------- */
+.kit--compact .tile-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+}
+.kit--compact .list-left .tile-icon { line-height: 1; }
+
+/* ---------- Templates tile: glassy purple (match Home hero), no chevron ---------- */
+.kit--compact .tile--template {
+  background: linear-gradient(
+    180deg,
+    rgba(114, 93, 255, 0.14) 0%,
+    rgba(114, 93, 255, 0.08) 55%,
+    rgba(114, 93, 255, 0.05) 100%
+  );
+  border: 1px solid rgba(157, 141, 255, 0.24);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 8px 28px rgba(114,93,255,0.10);
+  backdrop-filter: blur(6px);
+}
+.kit--compact .tile--template .tile-arrow { display: none !important; }
+
+/* --- Templates header: title next to icon; subtitle directly under --- */
+.kit--compact .tile-head.tile-head--stack {
+  display: grid;
+  grid-template-columns: 36px 1fr;  /* icon | text */
+  grid-template-rows: auto auto;    /* title then subtitle */
+  column-gap: 10px;
+  align-items: start;
+}
+.kit--compact .tile-head.tile-head--stack .tile-icon {
+  grid-row: 1 / span 2;             /* icon spans both rows */
+}
+.kit--compact .tile-head.tile-head--stack .tile-title {
+  grid-column: 2; grid-row: 1;
+  font-size: 20px;                   /* match Home hero scale */
+  font-weight: 800;
+}
+.kit--compact .tile-head.tile-head--stack .tile-sub {
+  grid-column: 2; grid-row: 2;
+  font-size: 14px;
+  opacity: .9;
+  margin-top: 4px;
+}
+
+/* ---------- Template pills: horizontal scroll (NO fade) ---------- */
+.kit--compact .template-chips {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding: 2px 2px;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+.kit--compact .template-chips::-webkit-scrollbar { display: none; }
+.kit--compact .template-chips .action-chip {
+  height: 36px;
+  border-radius: 999px;
+  padding: 0 14px;
+  font-size: 13px;
+  white-space: nowrap;
+  display: grid;
+  place-items: center;
+}
+
+/* ---------- Drum list rows ---------- */
+/* darker card style comes from your .panel; keep density tight */
+.kit--compact .list-card {
+  min-height: 56px;
+  padding: 10px 12px;
+}
+
+/* hide chevrons for drum rows; trailing actions instead */
+.kit--compact .list-card .tile-arrow { display: none; }
+
+/* trailing actions (edit/delete) */
+.kit--compact .list-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+  align-items: center;
+}
+
+/* clean icon-only buttons */
+.kit--compact .icon-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  border-radius: 8px; /* small hit target without visible bg */
+}
+.kit--compact .icon-btn svg { display: block; }
+
+/* action colors */
+.kit--compact .icon-btn--edit   { color: var(--accent-purple, #9B87FF); } /* purple */
+.kit--compact .icon-btn--delete { color: #FF6B6B; }                      /* red */
+
+/* ---------- Add Drum row: centered + and centered chevron-in-circle ---------- */
+.kit--compact .list-card--add { display: flex; align-items: center; }
+.kit--compact .list-card--add .list-left .tile-icon { display: grid; place-items: center; }
+
+.kit--compact .list-card--add .tile-arrow--circle {
+  display: grid !important;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  margin-left: auto;
+  align-self: center;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+}
+.kit--compact .list-card--add .tile-arrow--circle svg { display: block; }
+
+/* ---------- Bottom sheet: instant open; inputs/selects fit shell; caret aligned ---------- */
+.sheet { background-color: rgba(0,0,0,.35); }
+.sheet:not(.sheet--open) { background-color: transparent; pointer-events: none; }
+.sheet-card { transform: none; opacity: 1; }
+
+.sheet-card {
+  width: 100%;
+  max-width: var(--shell-w, 420px);
+  margin-inline: auto;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.sheet-card .field select,
+.sheet-card .field input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* custom caret, properly inset */
+.sheet-card select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><path d='M6 9l6 6 6-6' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px 14px;
+  padding-right: 34px;
+}
+
+/* hard clamp in edge cases (desktop viewport narrower than shell) */
+@supports (width: 100vw) {
+  .sheet-card .field select { max-width: calc(100vw - 32px); }
+}

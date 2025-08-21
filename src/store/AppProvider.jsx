@@ -13,14 +13,65 @@ const makeId = () =>
     ? crypto.randomUUID()
     : "id-" + Math.random().toString(36).slice(2) + Date.now();
 
-const drum = (over = {}) => ({
-  id: makeId(),
-  type: over.type ?? "tom",
-  size_in: over.size_in ?? 12,
-  lugs: over.lugs ?? 6,
-  reso_ratio: over.reso_ratio ?? 1.06,
-  target: { batter_hz: over.target ?? 0 },
-});
+/**
+ * Normalize a drum object into the canonical shape used by the store.
+ * Accepts legacy shapes:
+ *  - target as a number or object
+ *  - reso_ratio either on root or nested in target
+ */
+function normalizeDrum(input = {}) {
+  const out = { ...input };
+
+  // id
+  out.id = out.id || makeId();
+
+  // required fields with defaults
+  out.type = out.type || "tom";
+  out.size_in = Number(out.size_in ?? 12);
+  out.lugs = Number(out.lugs ?? 6);
+
+  // handle target: number | { batter_hz, reso_ratio? }
+  if (typeof out.target === "number") {
+    out.target = { batter_hz: out.target };
+  } else if (typeof out.target !== "object" || out.target === null) {
+    out.target = {};
+  }
+
+  // move any nested reso_ratio up to root for consistency
+  const nestedRatio = (out.target && typeof out.target.reso_ratio === "number")
+    ? out.target.reso_ratio
+    : undefined;
+
+  // final reso_ratio on root
+  out.reso_ratio = Number(
+    out.reso_ratio ?? nestedRatio ?? 1.06
+  );
+
+  // final target object
+  out.target = {
+    batter_hz: Number(
+      out.target?.batter_hz ??
+      (typeof input.target === "number" ? input.target : 0)
+    ),
+  };
+
+  return out;
+}
+
+function normalizeKit(kit) {
+  const drums = (kit?.drums ?? []).map(normalizeDrum);
+  return { drums };
+}
+
+const drum = (over = {}) =>
+  normalizeDrum({
+    id: makeId(),
+    type: over.type ?? "tom",
+    size_in: over.size_in ?? 12,
+    lugs: over.lugs ?? 6,
+    reso_ratio: over.reso_ratio ?? 1.06,
+    target: typeof over.target === "number" ? over.target : { batter_hz: over.target?.batter_hz ?? 0 },
+  });
 
 const templateDrums = (name) => {
   if (name === "3") return [
@@ -82,17 +133,20 @@ function reducer(state, action) {
       return { ...state, auth: { isAuthed: false, user: null } };
 
     // ---------- PERSIST ----------
-    case "LOAD_SAVED":
-      // be defensive in case old localStorage shape exists
+    case "LOAD_SAVED": {
+      // defensive migration to normalized shapes
+      const incoming = action.payload || {};
+      const kit = normalizeKit(incoming.kit ?? state.kit);
       return {
         ...state,
-        ...(action.payload || {}),
-        auth: action.payload?.auth ?? state.auth,
-        kit: action.payload?.kit ?? state.kit,
-        settings: { ...state.settings, ...(action.payload?.settings || {}) },
-        sessions: action.payload?.sessions ?? state.sessions,
-        activeDrumId: action.payload?.activeDrumId ?? state.activeDrumId,
+        ...incoming,
+        auth: incoming.auth ?? state.auth,
+        kit,
+        settings: { ...state.settings, ...(incoming.settings || {}) },
+        sessions: incoming.sessions ?? state.sessions,
+        activeDrumId: incoming.activeDrumId ?? (kit.drums[0]?.id ?? state.activeDrumId),
       };
+    }
 
     // ---------- KIT ----------
     case "APPLY_TEMPLATE": {
@@ -102,25 +156,48 @@ function reducer(state, action) {
     case "RESET_TEMPLATE":
       return { ...state, kit: { drums: [] }, activeDrumId: null };
 
+    case "REPLACE_KIT": {
+      const drums = (action.drums ?? []).map(normalizeDrum);
+      return { ...state, kit: { drums }, activeDrumId: drums[0]?.id ?? null };
+    }
+
     case "ADD_DRUM": {
-      const drums = [
-        ...state.kit.drums,
-        { ...action.drum, id: makeId(), target: { batter_hz: action.drum.target ?? 0 } },
-      ];
+      const next = normalizeDrum({ ...action.drum, id: action.drum?.id ?? makeId() });
+      const drums = [...state.kit.drums, next];
       return { ...state, kit: { drums } };
     }
+
     case "UPDATE_DRUM": {
-      const drums = state.kit.drums.map(d =>
-        d.id === action.id
-          ? { ...d, ...action.patch, target: { batter_hz: action.patch.target ?? d.target?.batter_hz ?? 0 } }
-          : d
-      );
+      const drums = state.kit.drums.map((d) => {
+        if (d.id !== action.id) return d;
+        const p = action.patch || {};
+        let next = { ...d, ...p };
+
+        // handle patch.target and nested reso_ratio correctly
+        if ("target" in p) {
+          if (typeof p.target === "number") {
+            next.target = { ...d.target, batter_hz: Number(p.target) };
+          } else if (p.target && typeof p.target === "object") {
+            if ("batter_hz" in p.target) {
+              next.target = { ...d.target, batter_hz: Number(p.target.batter_hz) };
+            }
+            if ("reso_ratio" in p.target && typeof p.target.reso_ratio === "number") {
+              next.reso_ratio = Number(p.target.reso_ratio);
+            }
+          }
+        }
+
+        // ensure final shape stays normalized (cheap pass)
+        return normalizeDrum(next);
+      });
       return { ...state, kit: { drums } };
     }
+
     case "DELETE_DRUM": {
       const drums = state.kit.drums.filter(d => d.id !== action.id);
       return { ...state, kit: { drums }, activeDrumId: drums[0]?.id ?? null };
     }
+
     case "SET_ACTIVE_DRUM":
       return { ...state, activeDrumId: action.id };
 
@@ -177,12 +254,29 @@ export default function AppProvider({ children }) {
     loginFake: (provider, name) => dispatch({ type: "LOGIN_FAKE", provider, name }),
     logout: () => dispatch({ type: "LOGOUT" }),
 
-    // kit
+    // kit (added convenience)
+    replaceKit: (arg) => {
+      const drums = Array.isArray(arg) ? arg : arg?.drums ?? [];
+      dispatch({ type: "REPLACE_KIT", drums });
+    },
     applyTemplate: (name) => dispatch({ type: "APPLY_TEMPLATE", name }),
     resetTemplate: () => dispatch({ type: "RESET_TEMPLATE" }),
     addDrum: (drum) => dispatch({ type: "ADD_DRUM", drum }),
-    updateDrum: (id, patch) => dispatch({ type: "UPDATE_DRUM", id, patch }),
+
+    // flexible: accept (id, patch) OR (drumObjectWithId)
+    updateDrum: (idOrDrum, patch) => {
+      if (typeof idOrDrum === "object" && idOrDrum?.id && !patch) {
+        const { id, ...rest } = idOrDrum;
+        dispatch({ type: "UPDATE_DRUM", id, patch: rest });
+      } else {
+        dispatch({ type: "UPDATE_DRUM", id: idOrDrum, patch });
+      }
+    },
+
     deleteDrum: (id) => dispatch({ type: "DELETE_DRUM", id }),
+    // alias for your Kit code
+    removeDrum: (id) => dispatch({ type: "DELETE_DRUM", id }),
+
     setActiveDrumId: (id) => dispatch({ type: "SET_ACTIVE_DRUM", id }),
 
     // settings
