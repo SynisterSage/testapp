@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/AppProvider.jsx";
 import { suggestHz } from "../lib/targets.js";
-import { useToast } from "../ui/ToastProvider.jsx";
 import "../styles/kit.compact.css";
 import "../styles/kit.ui.css";
 

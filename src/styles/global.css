@@ -167,6 +167,10 @@ input[type="number"], select {
   padding: 8px 10px;
 }
 input[type="range"] { width: 100%; }
+.range-sep{
+  padding-right: 5px;
+  padding-left: 5px;
+}
 
 /* Tuner readout */
 .tuner-hero { display: grid; gap: 4px; align-items: center; justify-items: center; margin-bottom: 8px; }
@@ -598,13 +602,22 @@ input[type="range"] { width: 100%; }
   }
   
   /* ---------- Compact Home-only overrides ---------- */
-.home-compact .dash-welcome { margin: 2px 0 6px; font-size: 22px; }
+.home-compact .dash-welcome { margin: -20px 0 6px; font-size: 22px; }
 .tuner-page .dash-welcome-row { margin: 6px 0 8px; }
+.tuner-page .dash-welcome {
+  margin-top: 0.5px;
+}
+.tuner-page .dash-top {padding-top: 1px;}
 
 .home-compact .dash-hero { padding: 12px; }
 .home-compact .dash-hero-title { font-size: 20px; margin-bottom: 6px; }
 .home-compact .dash-hero-sub { margin-bottom: 10px; }
 .home-compact .cta-btn { padding: 10px; border-radius: 10px; }
+.home-compact .dash-top{
+  margin-top: 1px;
+  margin-bottom: 4px;
+}
+
 
 .home-compact .dash-grid { gap: 10px; }
 .home-compact .dash-tile { padding: 12px; }
@@ -1004,8 +1017,12 @@ input[type="range"] { width: 100%; }
 /* ===== Title/clock row spacing (universal) ===== */
 .settings-page .dash-welcome,
 .welcome-row {
-  margin: 0px 0 8px !important;     
-  padding-top: 13px;              /* exact rhythm requested */
+  margin: 0px 0 15px !important;     
+  padding-top: 8px;              /* exact rhythm requested */
+ 
+}
+.settings-page .welcome-row{
+  margin-bottom: 150px;
 }
 
 /* ===== Card stack spacing (consistent gaps) ===== */
@@ -1021,7 +1038,26 @@ input[type="range"] { width: 100%; }
 }
 .settings-card .field { margin-top: 10px; }
 .settings-card .field:first-of-type { margin-top: 6px; }
+/* Shared side padding so scale and bar line up perfectly */
+.cents-wrap { --cents-pad: 16px; }
 
-settings-foot .hint {
-  margin-top: 100px;
+/* Place the five labels in equal columns, centered */
+.cents-scale {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);  /* -50, -25, 0, +25, +50 */
+  padding: 0 var(--cents-pad);
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+/* Make the bar use the exact same inner width */
+.cents-bar {
+  position: relative;
+  margin: 0 var(--cents-pad);
+}
+
+/* Ensure the needle is centered on its coordinate, not its left edge */
+.cents-needle {
+  position: absolute;       /* if it isn’t already */
+  transform: translateX(-50%);
 }

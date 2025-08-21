@@ -14,12 +14,18 @@
 .kit--compact .tile-title { font-size: 16px; }
 .kit--compact .tile-sub { font-size: var(--k-sub); opacity: .75; }
 
+.kit--compact .welcome-row {
+    padding-top: 3px;
+}
 /* Panels / cards */
 .kit--compact .panel { padding: var(--k-pad); border-radius: var(--k-radius); }
 .kit--compact .list-stack .panel + .panel { margin-top: 8px; }
 
 /* Templates tile — tighter */
 .kit--compact .dash-tile { margin-bottom: 10px; }
+.kit--compact .dash-top {
+    padding-top: 1px;
+}
 .kit--compact .dash-tile .tile-head { margin-bottom: 8px; }
 .kit--compact .dash-tile .tile-icon { font-size: 18px; }
 .kit--compact .dash-tile .action-chip {
