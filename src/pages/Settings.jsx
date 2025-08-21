@@ -1,117 +1,172 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "../store/AppProvider.jsx";
-import { useToast } from "../ui/ToastProvider.jsx";   // NEW
+
+// Safe toast (works even if ToastProvider isn't mounted)
+let safeToast = { show: () => {} };
+try { safeToast = require("../ui/ToastProvider.jsx").useToast(); } catch {}
+
+function useClock() {
+  const [t, setT] = useState(() => new Date());
+  useEffect(() => { const id = setInterval(() => setT(new Date()), 30_000); return () => clearInterval(id); }, []);
+  const h = t.getHours();
+  const h12 = ((h + 11) % 12) + 1;
+  const m = String(t.getMinutes()).padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h12}:${m} ${ampm}`;
+}
 
 export default function Settings() {
   const { state, actions } = useAppStore();
-  const { show } = useToast();                        // NEW
-  const [local, setLocal] = useState(state.settings);
+  const { show } = safeToast;
+  const clock = useClock();
 
-  function update(patch) {
-    const next = { ...local, ...patch };
-    setLocal(next);
-    actions.updateSettings(patch);
-  }
+  const s = state.settings ?? {};
+  const [bandLow, setBandLow]   = useState(s.bandpassLowHz  ?? 60);
+  const [bandHigh, setBandHigh] = useState(s.bandpassHighHz ?? 400);
+  const [rms, setRms]           = useState(s.rmsThreshold   ?? 0.02);
+  const [holdMs, setHoldMs]     = useState(s.holdMs         ?? 300);
+  const [theme, setTheme]       = useState(s.theme          ?? "dark");
 
+  // keep low <= high (simple clamp)
+  useEffect(() => {
+    if (bandLow > bandHigh) setBandLow(bandHigh);
+  }, [bandHigh]);
+  useEffect(() => {
+    if (bandHigh < bandLow) setBandHigh(bandLow);
+  }, [bandLow]);
+
+  // persist to store when local inputs change
+  useEffect(() => { actions.updateSettings?.({ bandpassLowHz: Number(bandLow) }); }, [bandLow]);
+  useEffect(() => { actions.updateSettings?.({ bandpassHighHz: Number(bandHigh) }); }, [bandHigh]);
+  useEffect(() => { actions.updateSettings?.({ rmsThreshold: Number(rms) }); }, [rms]);
+  useEffect(() => { actions.updateSettings?.({ holdMs: Number(holdMs) }); }, [holdMs]);
+  useEffect(() => { actions.updateSettings?.({ theme }); }, [theme]);
+
+  // header mic request
+  const [micStatus, setMicStatus] = useState("idle"); // idle|loading|ok|denied|noinput|unavailable|error
   async function requestMic() {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-      });
-      s.getTracks().forEach(t => t.stop());
-      show("Mic permission granted ✅");              // NEW
-    } catch (e) {
-      show("Mic permission failed ❌");               // NEW
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicStatus("unavailable"); show?.("Mic not supported in this browser"); return;
     }
-  }
-
-  function clearData() {
-    if (confirm("Clear all local data and reset app?")) {
-      actions.clearAll();
-      show("Cleared local data 🧹");                  // NEW
+    setMicStatus("loading");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      setMicStatus("ok");
+      show?.("Microphone enabled ✅");
+    } catch (e) {
+      const n = e?.name || "";
+      setMicStatus(
+        n === "NotAllowedError" || n === "SecurityError" ? "denied"
+        : n === "NotFoundError" ? "noinput"
+        : "error"
+      );
+      show?.("Could not access microphone");
     }
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
-      <header className="topbar">
-        <div className="brand-text">
-          <span className="headline">Settings</span>
-          <span className="sub">permissions • detection • theme</span>
+    <div className="settings-page">
+      {/* === Standard app header (brand left, Request Mic pill right) === */}
+      <div className="dash-top">
+        <div>
+          <div className="brand-tag-title">OVERTONE</div>
+          <div className="brand-tag-sub">Mobile Drum Tuner</div>
         </div>
-        <button className="ghost-btn" onClick={requestMic}>Request Mic</button>
-      </header>
+        <button className="top-cta" onClick={requestMic} aria-label="Request microphone access">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3Z" stroke="currentColor" strokeWidth="1.6"/>
+            <path d="M5 11v1a7 7 0 0 0 14 0v-1" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M12 19v3" stroke="currentColor" strokeWidth="1.6" />
+          </svg>
+          <span>Request Mic</span>
+        </button>
+      </div>
 
-      <section className="panel">
-        <h3 className="panel-title">Detection</h3>
+      {/* Page title + clock row */}
+      <div className="dash-welcome welcome-row">
+        <div className="tile-title">Settings</div>
+        <div className="top-clock">{clock}</div>
+      </div>
 
-        <div className="field">
-          <label>Bandpass (Hz)</label>
-          <div className="field-row">
-            <input
-              type="number"
-              value={local.bandpassLowHz}
-              onChange={(e) => update({ bandpassLowHz: Number(e.target.value || 0) })}
-              min="20" max="400" step="1"
-              aria-label="Bandpass low Hz"
-            />
-            <span>to</span>
-            <input
-              type="number"
-              value={local.bandpassHighHz}
-              onChange={(e) => update({ bandpassHighHz: Number(e.target.value || 0) })}
-              min="60" max="1000" step="1"
-              aria-label="Bandpass high Hz"
-            />
+      {/* ===== Cards (kept exactly like your current layout) ===== */}
+      <div className="settings-cards">
+
+        {/* Detection */}
+        <section className="panel settings-card">
+          <div className="panel-title">Detection</div>
+
+          <div className="field">
+            <label>Bandpass (Hz)</label>
+            <div className="range-pair">
+              <input
+                type="number" min="20" max="400" step="5"
+                value={bandLow}
+                onChange={(e) => setBandLow(Number(e.target.value || 60))}
+              />
+              <span className="range-sep">to</span>
+              <input
+                type="number" min="200" max="1200" step="10"
+                value={bandHigh}
+                onChange={(e) => setBandHigh(Number(e.target.value || 400))}
+              />
+            </div>
+            <div className="hint">Kick ~40–180 • Toms ~60–400 • Snare ~140–350</div>
           </div>
-          <div className="hint">Kick ~40–180 • Toms ~60–400 • Snare ~140–350</div>
-        </div>
 
-        <div className="field">
-          <label>Onset Sensitivity (RMS threshold)</label>
-          <input
-            type="range"
-            min="0.005" max="0.08" step="0.005"
-            value={local.rmsThreshold}
-            onChange={(e) => update({ rmsThreshold: Number(e.target.value) })}
-          />
-          <div className="hint">Current: {local.rmsThreshold.toFixed(3)}</div>
-        </div>
+          <div className="field">
+            <label>Onset Sensitivity (RMS threshold)</label>
+            <input
+              type="range"
+              min="0.005" max="0.1" step="0.005"
+              value={rms}
+              onChange={(e) => setRms(Number(e.target.value))}
+            />
+            <div className="hint">Current: {Number(rms).toFixed(3)}</div>
+          </div>
 
-        <div className="field">
-          <label>Hold (ms)</label>
-          <input
-            type="range"
-            min="150" max="500" step="10"
-            value={local.holdMs}
-            onChange={(e) => update({ holdMs: Number(e.target.value) })}
-          />
-          <div className="hint">Current: {local.holdMs} ms</div>
-        </div>
-      </section>
+          <div className="field">
+            <label>Hold (ms)</label>
+            <input
+              type="range"
+              min="100" max="1200" step="50"
+              value={holdMs}
+              onChange={(e) => setHoldMs(Number(e.target.value))}
+            />
+            <div className="hint">Current: {holdMs} ms</div>
+          </div>
+        </section>
 
-      <section className="panel">
-        <h3 className="panel-title">Appearance</h3>
-        <div className="field">
-          <label>Theme</label>
-          <select
-            value={local.theme || "dark"}
-            onChange={(e) => update({ theme: e.target.value })}
+        {/* Appearance */}
+        <section className="panel settings-card">
+          <div className="panel-title">Appearance</div>
+
+          <div className="field">
+            <label>Theme</label>
+            <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+              <option value="dark">Dark (recommended)</option>
+              <option value="light">Light</option>
+            </select>
+            <div className="hint">Changes apply instantly.</div>
+          </div>
+        </section>
+
+        {/* Danger Zone */}
+        <section className="panel settings-card">
+          <div className="panel-title">Danger Zone</div>
+
+          <button
+            className="ghost-btn"
+            onClick={() => { actions.clearAll?.(); show?.("Local data cleared"); }}
           >
-            <option value="dark">Dark (recommended)</option>
-            <option value="light">Light</option>
-            <option value="system">System</option>
-          </select>
-          <div className="hint">Changes apply instantly.</div>
-        </div>
-      </section>
+            Clear Local Data
+          </button>
+        </section>
 
-      <section className="panel">
-        <h3 className="panel-title">Danger Zone</h3>
-        <button className="ghost-btn" onClick={clearData}>Clear Local Data</button>
-      </section>
+      </div>
 
-      <div style={{ color: "var(--text-dim)", fontSize: 12, textAlign: "center", marginTop: "auto" }}>
+      {/* optional tiny footer */}
+      <div className="settings-foot hint" style={{ textAlign: "center", marginTop: "5.5rem" }}>
         v0.0.1 • local-only
       </div>
     </div>

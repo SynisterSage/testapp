@@ -662,7 +662,7 @@ input[type="range"] { width: 100%; }
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
-    margin: 6px 0 8px;              /* same spacing on both pages */
+    margin: 15px 0 8px;              /* same spacing on both pages */
   }
   .welcome-title {
     margin: 0;
@@ -973,4 +973,55 @@ input[type="range"] { width: 100%; }
 .sheet-label { font-size: 12px; color: var(--text-dim); }
 @media (max-width: 420px) {
   .sheet-grid { grid-template-columns: 1fr; }
+}
+/* ===== Header CTA: purple pill ===== */
+.top-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--accent-purple, #9B87FF);
+  color: #fff;
+  border: 1px solid rgba(157,141,255,.45);
+  font-weight: 800;
+  box-shadow: 0 6px 22px rgba(114,93,255,.25);
+}
+.top-cta svg { display: block; }
+.top-cta:hover { filter: brightness(1.06); }
+.top-cta:active { transform: translateY(1px); }
+
+/* ===== Header spacing/alignment (match all pages) ===== */
+.settings-page { padding-top: 2px; }                 /* no extra offset */
+.settings-page .dash-top {
+  margin-top: 0;
+  padding-top: 0;
+  margin-bottom: 6px;                              /* space below brand row */
+  align-items: center;                             
+}
+
+/* ===== Title/clock row spacing (universal) ===== */
+.settings-page .dash-welcome,
+.welcome-row {
+  margin: 0px 0 8px !important;     
+  padding-top: 13px;              /* exact rhythm requested */
+}
+
+/* ===== Card stack spacing (consistent gaps) ===== */
+.settings-cards {
+  display: grid;
+  gap: 12px;                                       /* same as list-stack on other pages */
+}
+
+/* ===== Card internals ===== */
+.settings-card {
+  padding: 12px;
+  border-radius: 14px;
+}
+.settings-card .field { margin-top: 10px; }
+.settings-card .field:first-of-type { margin-top: 6px; }
+
+settings-foot .hint {
+  margin-top: 100px;
 }
