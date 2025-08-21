@@ -1,0 +1,65 @@
+:root {
+    /* Base (dark) */
+    --bg: #0b0f14;
+    --bg-elev: #121822;
+    --text: #e5e7eb;
+    --text-dim: #9ca3af;
+    --primary: #4ade80;
+    --warn: #f59e0b;
+    --danger: #f87171;
+    --accent: #8b8cfb;
+    --accent-weak: rgba(139,140,251,0.14);
+    --card: #0f141c;
+    --border: #1f2937;
+  
+    --shadow-lg: 0 8px 28px rgba(0,0,0,0.45);
+    --shadow-md: 0 6px 18px rgba(0,0,0,0.35);
+  
+    --radius: 16px;
+    --radius-sm: 12px;
+  
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+  
+    --tap-scale: 0.98;
+  
+    /* iPhone 15 Pro base frame */
+    --phone-w: 393px;
+    --phone-h: 852px;
+  
+    /* Controls & overlays (DARK defaults) */
+    --input: #0b0f14;              /* inputs, selects, search */
+    --chip-bg: #0f141c;            /* chips/pills */
+    --chip-active-bg: rgba(74,222,128,0.12);
+    --sheet-bg: #0f141c;           /* bottom sheets */
+    --toast-bg: #0f141c;           /* centered toast card */
+  }
+  
+  /* Light theme overrides */
+  :root[data-theme="light"] {
+    --bg: #f7f8fb;
+    --bg-elev: #ffffff;
+    --text: #0b0f14;
+    --text-dim: #475569;
+    --primary: #4ade80;
+    --accent: #6366f1;
+  --accent-weak: rgba(99,102,241,0.14);
+    --card: #ffffff;
+    --border: #e5e7eb;
+  
+    --shadow-lg: 0 8px 28px rgba(0,0,0,0.08);
+    --shadow-md: 0 6px 18px rgba(0,0,0,0.10);
+  
+    /* Controls & overlays (LIGHT) */
+    --input: #ffffff;
+    --chip-bg: #f3f4f6;
+    --chip-active-bg: rgba(16,185,129,0.12);
+    --sheet-bg: #ffffff;
+    --toast-bg: #ffffff;
+  }
+  
