@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/AppProvider.jsx";
 
 // Safe toast (works even if ToastProvider isn't mounted)
@@ -18,6 +19,7 @@ function useClock() {
 export default function Settings() {
   const { state, actions } = useAppStore();
   const { show } = safeToast;
+  const navigate = useNavigate();
   const clock = useClock();
 
   const s = state.settings ?? {};
@@ -27,15 +29,9 @@ export default function Settings() {
   const [holdMs, setHoldMs]     = useState(s.holdMs         ?? 300);
   const [theme, setTheme]       = useState(s.theme          ?? "dark");
 
-  // keep low <= high (simple clamp)
-  useEffect(() => {
-    if (bandLow > bandHigh) setBandLow(bandHigh);
-  }, [bandHigh]);
-  useEffect(() => {
-    if (bandHigh < bandLow) setBandHigh(bandLow);
-  }, [bandLow]);
+  useEffect(() => { if (bandLow > bandHigh) setBandLow(bandHigh); }, [bandHigh]);
+  useEffect(() => { if (bandHigh < bandLow) setBandHigh(bandLow); }, [bandLow]);
 
-  // persist to store when local inputs change
   useEffect(() => { actions.updateSettings?.({ bandpassLowHz: Number(bandLow) }); }, [bandLow]);
   useEffect(() => { actions.updateSettings?.({ bandpassHighHz: Number(bandHigh) }); }, [bandHigh]);
   useEffect(() => { actions.updateSettings?.({ rmsThreshold: Number(rms) }); }, [rms]);
@@ -43,7 +39,7 @@ export default function Settings() {
   useEffect(() => { actions.updateSettings?.({ theme }); }, [theme]);
 
   // header mic request
-  const [micStatus, setMicStatus] = useState("idle"); // idle|loading|ok|denied|noinput|unavailable|error
+  const [micStatus, setMicStatus] = useState("idle");
   async function requestMic() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setMicStatus("unavailable"); show?.("Mic not supported in this browser"); return;
@@ -65,9 +61,14 @@ export default function Settings() {
     }
   }
 
+  function handleLogout() {
+    actions.logout?.();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <div className="settings-page">
-      {/* === Standard app header (brand left, Request Mic pill right) === */}
+      {/* Header (brand + Request Mic) */}
       <div className="dash-top">
         <div>
           <div className="brand-tag-title">OVERTONE</div>
@@ -83,17 +84,16 @@ export default function Settings() {
         </button>
       </div>
 
-      {/* Page title + clock row */}
-      <div className="dash-welcome welcome-row">
+      {/* Title + clock */}
+      <div className="dash-welcome" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <div className="tile-title">Settings</div>
         <div className="top-clock">{clock}</div>
       </div>
 
-      {/* ===== Cards (kept exactly like your current layout) ===== */}
+      {/* Cards */}
       <div className="settings-cards">
-
         {/* Detection */}
-        <section className="panel settings-card">
+        <section className="panel settings-card" style={{ marginBottom: "1px" }}>
           <div className="panel-title">Detection</div>
 
           <div className="field">
@@ -154,7 +154,6 @@ export default function Settings() {
         {/* Danger Zone */}
         <section className="panel settings-card">
           <div className="panel-title">Danger Zone</div>
-
           <button
             className="ghost-btn"
             onClick={() => { actions.clearAll?.(); show?.("Local data cleared"); }}
@@ -162,12 +161,18 @@ export default function Settings() {
             Clear Local Data
           </button>
         </section>
-
       </div>
 
-      {/* optional tiny footer */}
-      <div className="settings-foot hint" style={{ textAlign: "center", marginTop: "5.5rem" }}>
-        v0.0.1 • local-only
+      {/* Standalone, centered logout button (NOT a card) */}
+      <div className="settings-logout">
+        <button className="primary-btn danger-btn" onClick={handleLogout}>
+          Log out
+        </button>
+      </div>
+
+      {/* tiny footer */}
+      <div className="settings-foot hint" style={{ textAlign: "center", marginTop: "20px"}}>
+        v0.0.2 • Beta Testing • Lex
       </div>
     </div>
   );

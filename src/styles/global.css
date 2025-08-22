@@ -605,7 +605,7 @@ input[type="range"] { width: 100%; }
 .home-compact .dash-welcome { margin: -20px 0 6px; font-size: 22px; }
 .tuner-page .dash-welcome-row { margin: 6px 0 8px; }
 .tuner-page .dash-welcome {
-  margin-top: 0.5px;
+  margin-top: 0px;
 }
 .tuner-page .dash-top {padding-top: 1px;}
 
@@ -840,6 +840,7 @@ input[type="range"] { width: 100%; }
     place-items: center;
     color: var(--text-dim);
     font-weight: 600;
+    margin-top: 250px;
   }
   
   /* chip row fades on edges */
@@ -1018,7 +1019,7 @@ input[type="range"] { width: 100%; }
 .settings-page .dash-welcome,
 .welcome-row {
   margin: 0px 0 15px !important;     
-  padding-top: 8px;              /* exact rhythm requested */
+  padding-top: 5px;               /* exact rhythm requested */
  
 }
 .settings-page .welcome-row{
@@ -1061,3 +1062,29 @@ input[type="range"] { width: 100%; }
   position: absolute;       /* if it isn’t already */
   transform: translateX(-50%);
 }
+.settings-logout { display:flex; justify-content:center; margin-top: 20px; }
+.settings-logout .danger-btn { background: var(--danger); color: #0b0f14; }
+/* Reset row under the Batter/Reso switcher */
+.tuner-reset-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* Subtle ghost button that matches your theme */
+.btn-reset-ghost {
+  appearance: none;
+  background: transparent;
+  color: var(--text);
+  opacity: .85;
+  font-weight: 700;
+  border: 1px solid rgba(157,141,255,0.40); /* purple outline */
+  border-radius: 999px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform .12s ease, opacity .12s ease, background-color .12s ease;
+}
+.btn-reset-ghost:hover { transform: translateY(-1px); opacity: 1; background: rgba(157,141,255,0.06); }
+.btn-reset-ghost:active { transform: translateY(0); opacity: .9; }

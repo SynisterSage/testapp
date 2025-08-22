@@ -15,7 +15,8 @@
 .kit--compact .tile-sub { font-size: var(--k-sub); opacity: .75; }
 
 .kit--compact .welcome-row {
-    padding-top: 3px;
+    padding-top: 2px;
+    margin-bottom: 20px !important;
 }
 /* Panels / cards */
 .kit--compact .panel { padding: var(--k-pad); border-radius: var(--k-radius); }

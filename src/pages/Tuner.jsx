@@ -55,7 +55,7 @@ export default function Tuner() {
   const navigate = useNavigate();
   const clock = useClock();
 
-  const drums = state.kit.drums;
+  const drums = state.kit.drums || [];
   const hasKit = drums.length > 0;
   const activeId = state.activeDrumId || drums[0]?.id || null;
   const activeIndex = Math.max(0, drums.findIndex(d => d.id === activeId));
@@ -104,6 +104,17 @@ export default function Tuner() {
     activeChipRef.current?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [activeId]);
 
+  // ✓ seed doneSet from persisted state
+  const doneSet = useRef(new Set());
+  useEffect(() => {
+    const s = new Set();
+    drums.forEach(d => {
+      if (d?.tuned?.batter) s.add(`${d.id}-batter`);
+      if (d?.tuned?.reso)   s.add(`${d.id}-reso`);
+    });
+    doneSet.current = s;
+  }, [drums]);
+
   useEffect(() => {
     if (!hasKit || !active) {
       setMicStatus("idle");
@@ -120,14 +131,10 @@ export default function Tuner() {
     let canceled = false;
     (async () => {
       try {
-        // Optional pre-check
         try {
           const devs = await navigator.mediaDevices.enumerateDevices();
           const hasInput = devs.some(d => d.kind === "audioinput");
-          if (!hasInput) {
-            setMicStatus("noinput");
-            return;
-          }
+          if (!hasInput) { setMicStatus("noinput"); return; }
         } catch {}
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -170,22 +177,15 @@ export default function Tuner() {
     })();
 
     return () => {
-      canceled = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       try { ctxRef.current && ctxRef.current.close(); } catch {}
-      try {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(t => t.stop());
-          streamRef.current = null;
-        }
-      } catch {}
+      try { streamRef.current?.getTracks()?.forEach(t => t.stop()); } catch {}
     };
   }, [hasKit, activeId, bpLow, bpHigh, rmsThreshold, targetHz, micKey]);
 
   // Guided lock
   const zoneMsRef = useRef(0);
   const lockedKeyRef = useRef(null);
-  const doneSet = useRef(new Set()); // `${id}-batter` / `${id}-reso`
 
   function onFrame(hz, cents, loud, dtMs) {
     if (!active || !targetHz || !hz || !loud) { zoneMsRef.current = 0; return; }
@@ -197,6 +197,10 @@ export default function Tuner() {
         lockedKeyRef.current = key;
         doneSet.current.add(key);
         setJustLocked(true);
+
+        // persist ✓ for this head
+        const prev = active.tuned || {};
+        actions.updateDrum(active.id, { tuned: { ...prev, [head]: true } });
 
         actions.addSession?.({
           id: crypto.randomUUID?.() || String(Date.now()),
@@ -238,6 +242,15 @@ export default function Tuner() {
   function goNext() { goIndex(activeIndex + 1 >= drums.length ? activeIndex : activeIndex + 1); }
   function goPrev() { goIndex(activeIndex - 1); }
 
+  // Reset only the current drum
+  function resetCurrentDrum() {
+    if (!active) return;
+    actions.updateDrum(active.id, { tuned: { batter: false, reso: false } });
+    doneSet.current.delete(`${active.id}-batter`);
+    doneSet.current.delete(`${active.id}-reso`);
+    setJustLocked(false);
+  }
+
   // mic warning empty-state (like no-kit)
   const showMicWarning = hasKit && ["denied", "unavailable", "noinput", "error"].includes(micStatus);
   const micMsg =
@@ -245,17 +258,6 @@ export default function Tuner() {
     micStatus === "unavailable" ? "Microphone not supported in this browser" :
     micStatus === "noinput"     ? "No microphone input found" :
     "Could not start microphone";
-
-  // small purple buttons
-  const purpleBtn = {
-    background: "var(--accent-purple, #9B87FF)",
-    color: "white",
-  };
-  const purpleGhost = {
-    border: "1px solid rgba(157,141,255,0.5)",
-    color: "var(--accent-purple, #9B87FF)",
-    background: "transparent",
-  };
 
   if (!hasKit) {
     return (
@@ -295,16 +297,15 @@ export default function Tuner() {
           <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>No microphone found</div>
           <div style={{opacity:.8, marginBottom:12}}>{micMsg}</div>
           <div style={{display:"flex", gap:8, justifyContent:"center"}}>
-            <button className="primary-btn" style={purpleBtn} onClick={() => setMicKey(k => k + 1)}>Retry</button>
-            <button className="ghost-btn" style={purpleGhost} onClick={() => navigate("/settings")}>Settings</button>
+            <button className="primary-btn" onClick={() => setMicKey(k => k + 1)}>Retry</button>
+            <button className="ghost-btn" onClick={() => navigate("/settings")}>Settings</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // small visual bias so the needle aligns with the center label/green zone
-  const centerBiasPct = 1.25; // tweak if your UI shifts slightly
+  const centerBiasPct = 1.25; // tiny visual fix for scale/needle alignment
 
   return (
     <div className="tuner-page">
@@ -321,7 +322,7 @@ export default function Tuner() {
         <div className="top-clock">{clock}</div>
       </div>
 
-      {/* drum chips (scroll + fades) */}
+      {/* drum chips */}
       <div className="drum-picker drum-picker--tight">
         <div className="drum-scroll mask-fade-lr">
           {drums.map((d, i) => {
@@ -345,7 +346,7 @@ export default function Tuner() {
         </div>
       </div>
 
-      {/* header card — inner content centered & constrained */}
+      {/* header card */}
       <div className="tuner-head panel">
         <div className="tuner-head-inner">
           <div className="tuner-head-row">
@@ -369,6 +370,17 @@ export default function Tuner() {
               >Reso</button>
             </div>
           </div>
+
+          {/* reset progress – this drum only */}
+          <div className="tuner-reset-row">
+            <button className="btn-reset-ghost" onClick={resetCurrentDrum} title="Clear ✓ for this drum">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden style={{marginRight:6}}>
+                <path d="M4 4h16M7 4l1 14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                <path d="M9 4V3a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              Reset tuning for this drum
+            </button>
+          </div>
         </div>
       </div>
 
@@ -380,7 +392,7 @@ export default function Tuner() {
         </div>
       </div>
 
-      {/* cents bar + status label below */}
+      {/* cents bar + status */}
       <div className="cents-wrap">
         <div className="cents-scale">
           <span>-50¢</span><span>-25¢</span><span>0</span><span>+25¢</span><span>+50¢</span>
@@ -396,7 +408,7 @@ export default function Tuner() {
         </div>
 
         <div className={`cents-readout ${justLocked ? "cents-readout--locked" : ""}`}>
-          {justLocked ? "LOCKED ✓" : (micStatus === "ok" ? "adjust" : "mic off")}
+          {justLocked ? "LOCKED ✓" : "adjust"}
         </div>
       </div>
     </div>

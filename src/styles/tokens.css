@@ -11,7 +11,8 @@
     --accent-weak: rgba(139,140,251,0.14);
     --card: #0f141c;
     --border: #1f2937;
-  
+    --tabbar-h: 60px;                   /* bottom nav height */
+  --scroll-pad-x: 12px;      
     --shadow-lg: 0 8px 28px rgba(0,0,0,0.45);
     --shadow-md: 0 6px 18px rgba(0,0,0,0.35);
   

@@ -15,39 +15,27 @@ const makeId = () =>
 
 /**
  * Normalize a drum object into the canonical shape used by the store.
- * Accepts legacy shapes:
- *  - target as a number or object
- *  - reso_ratio either on root or nested in target
  */
 function normalizeDrum(input = {}) {
   const out = { ...input };
 
-  // id
   out.id = out.id || makeId();
-
-  // required fields with defaults
   out.type = out.type || "tom";
   out.size_in = Number(out.size_in ?? 12);
   out.lugs = Number(out.lugs ?? 6);
 
-  // handle target: number | { batter_hz, reso_ratio? }
   if (typeof out.target === "number") {
     out.target = { batter_hz: out.target };
   } else if (typeof out.target !== "object" || out.target === null) {
     out.target = {};
   }
 
-  // move any nested reso_ratio up to root for consistency
   const nestedRatio = (out.target && typeof out.target.reso_ratio === "number")
     ? out.target.reso_ratio
     : undefined;
 
-  // final reso_ratio on root
-  out.reso_ratio = Number(
-    out.reso_ratio ?? nestedRatio ?? 1.06
-  );
+  out.reso_ratio = Number(out.reso_ratio ?? nestedRatio ?? 1.06);
 
-  // final target object
   out.target = {
     batter_hz: Number(
       out.target?.batter_hz ??
@@ -99,8 +87,7 @@ const templateDrums = (name) => {
 const LS_KEY = "overtone:state";
 
 const initialState = {
-  // FAKE AUTH (simple + persisted)
-  auth: { isAuthed: false, user: null }, // user: { id, name, provider }
+  auth: { isAuthed: false, user: null },
 
   kit: { drums: [] },
   activeDrumId: null,
@@ -115,7 +102,7 @@ const initialState = {
     theme: "dark",
   },
 
-  sessions: [], // recent tuning sessions
+  sessions: [],
 };
 
 function reducer(state, action) {
@@ -134,7 +121,6 @@ function reducer(state, action) {
 
     // ---------- PERSIST ----------
     case "LOAD_SAVED": {
-      // defensive migration to normalized shapes
       const incoming = action.payload || {};
       const kit = normalizeKit(incoming.kit ?? state.kit);
       return {
@@ -173,7 +159,6 @@ function reducer(state, action) {
         const p = action.patch || {};
         let next = { ...d, ...p };
 
-        // handle patch.target and nested reso_ratio correctly
         if ("target" in p) {
           if (typeof p.target === "number") {
             next.target = { ...d.target, batter_hz: Number(p.target) };
@@ -187,7 +172,6 @@ function reducer(state, action) {
           }
         }
 
-        // ensure final shape stays normalized (cheap pass)
         return normalizeDrum(next);
       });
       return { ...state, kit: { drums } };
@@ -218,7 +202,6 @@ function reducer(state, action) {
   }
 }
 
-// -------- provider --------
 export default function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
@@ -226,14 +209,11 @@ export default function AppProvider({ children }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        dispatch({ type: "LOAD_SAVED", payload: parsed });
-      }
+      if (raw) dispatch({ type: "LOAD_SAVED", payload: JSON.parse(raw) });
     } catch {}
   }, []);
 
-  // persist when key slices change (avoid huge writes)
+  // persist important slices
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -249,12 +229,29 @@ export default function AppProvider({ children }) {
     } catch {}
   }, [state.auth, state.kit, state.settings, state.sessions, state.activeDrumId]);
 
+  // ---------- THEME SYNC (this is the fix) ----------
+  useEffect(() => {
+    const theme = state.settings?.theme || "dark";
+    const root = document.documentElement;
+
+    // tokens.css listens to :root (dark default) + :root[data-theme="light"]
+    root.setAttribute("data-theme", theme);             // sets "light" or "dark"
+
+    // also support old class-based selectors (harmless if unused)
+    root.classList.toggle("theme-dark", theme === "dark");
+    root.classList.toggle("theme-light", theme === "light");
+
+    // nice-to-have: update mobile address bar color
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "light" ? "#f7f8fb" : "#0b0f14");
+  }, [state.settings?.theme]);
+
   const actions = useMemo(() => ({
     // fake auth
     loginFake: (provider, name) => dispatch({ type: "LOGIN_FAKE", provider, name }),
     logout: () => dispatch({ type: "LOGOUT" }),
 
-    // kit (added convenience)
+    // kit
     replaceKit: (arg) => {
       const drums = Array.isArray(arg) ? arg : arg?.drums ?? [];
       dispatch({ type: "REPLACE_KIT", drums });
@@ -263,7 +260,6 @@ export default function AppProvider({ children }) {
     resetTemplate: () => dispatch({ type: "RESET_TEMPLATE" }),
     addDrum: (drum) => dispatch({ type: "ADD_DRUM", drum }),
 
-    // flexible: accept (id, patch) OR (drumObjectWithId)
     updateDrum: (idOrDrum, patch) => {
       if (typeof idOrDrum === "object" && idOrDrum?.id && !patch) {
         const { id, ...rest } = idOrDrum;
@@ -274,9 +270,7 @@ export default function AppProvider({ children }) {
     },
 
     deleteDrum: (id) => dispatch({ type: "DELETE_DRUM", id }),
-    // alias for your Kit code
     removeDrum: (id) => dispatch({ type: "DELETE_DRUM", id }),
-
     setActiveDrumId: (id) => dispatch({ type: "SET_ACTIVE_DRUM", id }),
 
     // settings
