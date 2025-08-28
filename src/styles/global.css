@@ -1,6 +1,6 @@
 /* Global reset-ish */
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; }
+html, body, #root{height:100dvh; overflow: hidden;}
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
@@ -9,6 +9,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+:root {
+  --phone-h: 844px;  /* iPhone 14 logical height */
+  --phone-w: 390px;  /* iPhone 14 logical width */
+}
 /* Light body bg */
 :root[data-theme="light"] body {
   background: radial-gradient(1200px 800px at 50% -20%, #eef3ff 0%, #f7f8fb 55%, #ffffff 100%);
@@ -16,16 +20,20 @@ body {
 
 /* Outer centers a phone frame; also great on desktop localhost */
 .app-outer {
-  min-height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   display: grid;
   place-items: center;
   padding: 24px;
+  padding: clamp(8px, 2vh, 24px);
 }
 
 .app-shell {
   width: 100%;
   max-width: var(--phone-w);
-  min-height: min(var(--phone-h), 100dvh);
+  height: clamp(568px, var(--phone-h), 100dvh);
+  max-height: clamp(568px, var(--phone-h), 100dvh);
+  box-sizing: border-box;
   background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.0));
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 28px;
@@ -34,9 +42,16 @@ body {
   flex-direction: column;
   padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 8px);
   position: relative;     /* contain overlays */
-  overflow: hidden;       /* clip sheet/toasts to the phone frame */
+ overflow-x: hidden;
+ overflow-y: auto;
+ -webkit-overflow-scrolling: touch;
+ -ms-overflow-style: none;
+ scrollbar-width: none; 
 }
-
+.app-shell::-webkit-scrollbar {
+  width: 0;                   /* Chrome/Safari/Edge */
+  height: 0;
+}
 /* Topbar */
 .topbar {
   display: flex;

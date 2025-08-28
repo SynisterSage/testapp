@@ -1,0 +1,70 @@
+/* Keep page inside shell + consistent gutters */
+.tuner-page { width: calc(100% - 0px); margin-inline: auto; box-sizing: border-box; }
+.tuner-page--fixed { display: grid; grid-auto-rows: min-content; gap: 12px; }
+.tuner-page--fixed > * { min-width: 0; }
+.tuner-ring-wrap, .tuner-hero, .tuner-head.panel, .drum-picker .drum-scroll { max-width: 100%; }
+
+/* Head row: smaller Prev/Next */
+.tuner-head-row .ghost-btn.ghost-btn--sm { padding: 6px 10px; font-size: 12px; border-radius: 10px; }
+
+/* Spacing tweaks so elements aren't cramped */
+.tuner-ring-wrap { display: flex; justify-content: center; align-items: center; padding: 4px 8px 2px; }
+.tuner-hero { display: grid; gap: 8px; align-items: center; justify-items: center; padding: 0 10px; }
+.tuner-hero--flat { background: transparent; border: 0; }
+.tuner-note { font-size: 42px; line-height: 1; font-weight: 800; letter-spacing: .5px; }
+.tuner-hz { font-size: 14px; color: var(--text-dim); }
+
+/* Use a shared "measure" so chart width == cents bar width */
+.tuner-measure { padding: 0 10px; }
+
+/* Cents meter (tight but readable) */
+.cents-wrap { display: grid; gap: 6px; width: 100%; }
+.cents-scale { display: grid; grid-template-columns: repeat(5, 1fr); font-size: 10px; color: var(--text-dim); }
+.cents-bar {
+  position: relative; height: 16px; border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(248,113,113,.25) 0%,
+    rgba(248,113,113,.25) 40%,
+    rgba(74,222,128,.35) 47%,
+    rgba(74,222,128,.35) 53%,
+    rgba(248,113,113,.25) 60%,
+    rgba(248,113,113,.25) 100%);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.cents-green { position: absolute; left: 47%; width: 6%; top: 0; bottom: 0; background: rgba(74,222,128,.5); }
+.cents-needle { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #fff; border-radius: 2px; box-shadow: 0 0 8px rgba(255,255,255,.5); }
+:root[data-theme="light"] .cents-needle { background: #0b0f14; box-shadow: 0 0 8px rgba(0,0,0,.35); }
+.cents-readout { text-align: center; font-weight: 600; }
+
+/* Strip chart (same width as cents bar) */
+.strip-wrap { width: 100%; }
+.strip-chart { display: block; width: 100%; height: 54px; }
+.strip-bg { fill: rgba(124,58,237,.10); }
+.strip-lock { fill: rgba(34,197,94,.22); }
+.strip-mid { stroke: rgba(255,255,255,.25); stroke-width: 1; }
+.strip-trace { fill: none; stroke: #a78bfa; stroke-width: 2; }
+.strip-scale { fill: var(--text-dim); font-size: 10px; }
+
+/* Stats below chart in one line */
+.tuner-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.metric-label { opacity: .95; margin-right: 4px; }
+
+/* Lug ring visuals */
+.lug-ring { filter: drop-shadow(0 2px 10px rgba(0,0,0,.2)); }
+.lug-ring-outline { fill: none; stroke: rgba(124,58,237,.25); stroke-width: 2; }
+.lug-node { fill: rgba(124,58,237,.35); stroke: rgba(255,255,255,.25); stroke-width: 1; }
+.lug-node--active { fill: rgba(139,92,246,.9); }
+.lug-node-glow { fill: rgba(139,92,246,.25); }
+.lug-node--locked { stroke: rgba(34,197,94,.9); stroke-width: 2; }
+.lug-node--high { filter: drop-shadow(0 0 6px rgba(248,113,113,.6)); }
+.lug-node--low { filter: drop-shadow(0 0 6px rgba(59,130,246,.5)); }
+.lug-label { font-size: 10px; text-anchor: middle; fill: var(--text-dim); }
+.lug-cents { font-size: 10px; text-anchor: middle; fill: #fff; opacity: .85; }
+.lug-check { fill: #fff; font-size: 12px; font-weight: 800; }
