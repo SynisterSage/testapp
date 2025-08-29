@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import { listenToAuth, loginWithEmail, loginWithGoogle, registerWithEmail, logoutFirebase } from "../lib/auth";
+import { loadUserState, saveUserState, patchUserState } from "../lib/db";
+import { debounceCloudSave, persistLocal, readLocal } from "../lib/persistence";
 
 const Ctx = createContext(null);
 export function useAppStore() {
@@ -108,14 +111,6 @@ const initialState = {
 function reducer(state, action) {
   switch (action.type) {
     // ---------- AUTH ----------
-    case "LOGIN_FAKE": {
-      const user = {
-        id: makeId(),
-        name: action.name || (action.provider === "google" ? "Google User" : "Guest"),
-        provider: action.provider || "guest",
-      };
-      return { ...state, auth: { isAuthed: true, user } };
-    }
     case "LOGOUT":
       return { ...state, auth: { isAuthed: false, user: null } };
 
@@ -205,53 +200,122 @@ function reducer(state, action) {
 export default function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // load once
+  // Load from local cache (pre-auth)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) dispatch({ type: "LOAD_SAVED", payload: JSON.parse(raw) });
-    } catch {}
+    const cached = readLocal(LS_KEY);
+    if (cached) dispatch({ type: "LOAD_SAVED", payload: cached });
   }, []);
 
-  // persist important slices
-  useEffect(() => {
+useEffect(() => {
+  const unsub = listenToAuth(async (user) => {
+    if (!user) {
+      dispatch({ type: "LOGOUT" });
+      return;
+    }
+
+    const authPayload = {
+      isAuthed: true,
+      user: {
+        id: user.uid,
+        name: user.displayName || (user.email ? user.email.split("@")[0] : "User"),
+        email: user.email || null,
+        provider: user.providerData?.[0]?.providerId || "password",
+      },
+    };
+
+    // 1) mark authed so routes unlock
+    dispatch({ type: "LOAD_SAVED", payload: { auth: authPayload } });
+
+    // 2) load local immediately
+    const local = readLocal("overtone:state") || {};
+
     try {
-      localStorage.setItem(
-        LS_KEY,
-        JSON.stringify({
-          auth: state.auth,
-          kit: state.kit,
-          settings: state.settings,
-          sessions: state.sessions,
-          activeDrumId: state.activeDrumId,
-        })
-      );
-    } catch {}
+      // 3) fetch remote
+      const remote = await loadUserState(user.uid);
+
+      if (remote) {
+        // merge order: initial defaults → remote → local (local wins)
+        const merged = {
+          kit: remote.kit ?? local.kit ?? initialState.kit,
+          sessions: remote.sessions ?? local.sessions ?? [],
+          activeDrumId: remote.activeDrumId ?? local.activeDrumId ?? null,
+          settings: {
+            ...initialState.settings,
+            ...(remote.settings || {}),
+            ...(local.settings || {}),   // <-- local wins (includes your latest theme)
+          },
+        };
+        dispatch({ type: "LOAD_SAVED", payload: { ...merged, auth: authPayload } });
+      } else {
+        // no remote yet → seed with local-or-defaults
+        const seed = {
+          kit: local.kit ?? initialState.kit,
+          settings: local.settings ?? initialState.settings,
+          sessions: local.sessions ?? [],
+          activeDrumId: local.activeDrumId ?? null,
+        };
+        await saveUserState(user.uid, seed);
+        dispatch({ type: "LOAD_SAVED", payload: { ...seed, auth: authPayload } });
+      }
+    } catch (e) {
+      console.error("Firestore hydrate error:", e);
+      // fall back to local + auth
+      dispatch({
+        type: "LOAD_SAVED",
+        payload: {
+          kit: local.kit ?? initialState.kit,
+          settings: local.settings ?? initialState.settings,
+          sessions: local.sessions ?? [],
+          activeDrumId: local.activeDrumId ?? null,
+          auth: authPayload,
+        },
+      });
+    }
+  });
+  return () => unsub();
+}, []);
+
+
+
+  // Persist to local + cloud (debounced)
+  useEffect(() => {
+    const payload = {
+      auth: state.auth,
+      kit: state.kit,
+      settings: state.settings,
+      sessions: state.sessions,
+      activeDrumId: state.activeDrumId,
+    };
+    persistLocal(LS_KEY, payload);
+
+    const uid = state.auth?.user?.id;
+    if (uid) {
+      debounceCloudSave(() => {
+        const { kit, settings, sessions, activeDrumId } = state;
+        patchUserState(uid, { kit, settings, sessions, activeDrumId }).catch(() => {});
+      });
+    }
   }, [state.auth, state.kit, state.settings, state.sessions, state.activeDrumId]);
 
-  // ---------- THEME SYNC (this is the fix) ----------
+  // Theme sync (kept from your version)
   useEffect(() => {
     const theme = state.settings?.theme || "dark";
     const root = document.documentElement;
-
-    // tokens.css listens to :root (dark default) + :root[data-theme="light"]
-    root.setAttribute("data-theme", theme);             // sets "light" or "dark"
-
-    // also support old class-based selectors (harmless if unused)
+    root.setAttribute("data-theme", theme);
     root.classList.toggle("theme-dark", theme === "dark");
     root.classList.toggle("theme-light", theme === "light");
-
-    // nice-to-have: update mobile address bar color
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "light" ? "#f7f8fb" : "#0b0f14");
   }, [state.settings?.theme]);
 
   const actions = useMemo(() => ({
-    // fake auth
-    loginFake: (provider, name) => dispatch({ type: "LOGIN_FAKE", provider, name }),
-    logout: () => dispatch({ type: "LOGOUT" }),
+    // AUTH
+    loginEmail: (email, pwd) => loginWithEmail(email, pwd),
+    registerEmail: (email, pwd, name) => registerWithEmail(email, pwd, name),
+    loginGoogle: () => loginWithGoogle(),
+    logout: () => logoutFirebase(),
 
-    // kit
+    // KIT / SETTINGS / SESSIONS (unchanged)
     replaceKit: (arg) => {
       const drums = Array.isArray(arg) ? arg : arg?.drums ?? [];
       dispatch({ type: "REPLACE_KIT", drums });
@@ -272,19 +336,14 @@ export default function AppProvider({ children }) {
     deleteDrum: (id) => dispatch({ type: "DELETE_DRUM", id }),
     removeDrum: (id) => dispatch({ type: "DELETE_DRUM", id }),
     setActiveDrumId: (id) => dispatch({ type: "SET_ACTIVE_DRUM", id }),
-
-    // settings
     updateSettings: (patch) => dispatch({ type: "UPDATE_SETTINGS", patch }),
-
-    // sessions
     addSession: (session) => dispatch({ type: "ADD_SESSION", session }),
 
-    // utility
     clearAll: () => {
       try { localStorage.removeItem(LS_KEY); } catch {}
       dispatch({ type: "CLEAR_ALL" });
     },
-  }), []);
+  }), [state]);
 
   return <Ctx.Provider value={{ state, actions }}>{children}</Ctx.Provider>;
 }

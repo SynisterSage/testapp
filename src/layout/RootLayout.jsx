@@ -4,12 +4,12 @@ import { ToastViewport } from "../ui/ToastProvider.jsx";
 
 export default function RootLayout({ children }) {
   const { pathname } = useLocation();
-  const hideTabs = pathname === "/login";
+  const hideTabs = pathname === "/login" || pathname === "/signup"; // ⬅️ add signup
 
   return (
     <div className="app-outer">
       <div className="app-shell">
-        <main style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+        <main role="main" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
           {children}
         </main>
         {!hideTabs && <TabBar />}

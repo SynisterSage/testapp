@@ -7,9 +7,19 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync",
+    "cap:copy": "npx cap copy",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android",
+    "cap:run:ios:dev": "npx cap run ios -l --external",
+    "cap:run:android:dev": "npx cap run android -l --external"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/ios": "^7.4.3",
+    "firebase": "^12.2.1",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.540.0",
     "react": "^19.1.1",
@@ -17,6 +27,7 @@
     "react-router-dom": "^7.8.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
     "@eslint/js": "^9.33.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
@@ -25,6 +36,8 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.3.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2",
     "vite": "^7.1.2"
   }
 }
