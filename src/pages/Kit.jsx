@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/AppProvider.jsx";
 import { suggestHz } from "../lib/targets.js";
@@ -78,6 +78,10 @@ export default function Kit() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null | drum obj
+
+  // NEW: ref to the page container + freeze scroll when sheet is open
+  const pageRef = useRef(null);
+  useFreezeScroll(pageRef, sheetOpen);
 
   // Template definitions (ids drive order: high→low toms applied below)
   const templates = [
@@ -166,18 +170,18 @@ export default function Kit() {
 
   // Auto-update target when TYPE / SIZE / LUGS change
   function handleTypeChange(newType) {
-  const { size, lugs } = defaultsForType(newType);
-  setEditing(prev => ({
-    ...prev,
-    type: newType,
-    size_in: size,          // RESET size to type default
-    lugs,                   // RESET lugs to type default
-    target: {
-      ...(prev?.target || {}),
-      batter_hz: computeTargetHz(newType, size, lugs),
-    },
-  }));
-}
+    const { size, lugs } = defaultsForType(newType);
+    setEditing(prev => ({
+      ...prev,
+      type: newType,
+      size_in: size,          // RESET size to type default
+      lugs,                   // RESET lugs to type default
+      target: {
+        ...(prev?.target || {}),
+        batter_hz: computeTargetHz(newType, size, lugs),
+      },
+    }));
+  }
   
   function handleSizeChange(val) {
     const size = Number(val || 12);
@@ -203,12 +207,12 @@ export default function Kit() {
   const rows = useMemo(() => drums, [drums]);
 
   return (
-    <div className="kit-page kit--compact">
+    <div ref={pageRef} className="kit-page kit--compact">
       {/* Top brand row */}
       <div className="dash-top">
         <div>
           <div className="brand-tag-title">OVERTONE</div>
-        <div className="brand-tag-sub">Mobile Drum Tuner</div>
+          <div className="brand-tag-sub">Mobile Drum Tuner</div>
         </div>
         <button className="top-gear" aria-label="Settings" onClick={() => navigate("/settings")}>⚙︎</button>
       </div>
@@ -249,7 +253,19 @@ export default function Kit() {
           </button>
         </div>
       </section>
-
+{/* Add drum */}
+        <article className="panel list-card list-card--add" onClick={openAdd} role="button">
+          <div className="list-left"><div className="tile-icon" style={{ paddingBottom: 4 }}>＋</div></div>
+          <div className="list-main">
+            <div className="list-title">Add Drum</div>
+            <div className="list-sub">Type • size • lugs • target</div>
+          </div>
+          <div className="tile-arrow tile-arrow--circle" aria-hidden>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+              <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </article>
       {/* List of drums */}
       <section className="list-stack">
         {rows.map((d) => (
@@ -286,19 +302,7 @@ export default function Kit() {
           </article>
         ))}
 
-        {/* Add drum */}
-        <article className="panel list-card list-card--add" onClick={openAdd} role="button">
-          <div className="list-left"><div className="tile-icon">＋</div></div>
-          <div className="list-main">
-            <div className="list-title">Add Drum</div>
-            <div className="list-sub">Type • size • lugs • target</div>
-          </div>
-          <div className="tile-arrow tile-arrow--circle" aria-hidden>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-              <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-        </article>
+        
       </section>
 
       {/* Bottom sheet */}
@@ -378,4 +382,76 @@ export default function Kit() {
       </div>
     </div>
   );
+}
+
+/* =========================
+   Scroll-freeze helpers
+   ========================= */
+
+function useFreezeScroll(targetRef, active) {
+  useLayoutEffect(() => {
+    if (!active) return;
+
+    const scroller =
+      getScrollContainer(targetRef.current) ||
+      document.scrollingElement ||
+      document.documentElement;
+
+    const isDoc = scroller === document.documentElement || scroller === document.body;
+
+    // capture current scroll position
+    const scrollTop = isDoc ? window.pageYOffset : scroller.scrollTop;
+
+    // save previous inline styles so we can restore perfectly
+    const prev = {
+      overflow: scroller.style.overflow,
+      position: isDoc ? document.body.style.position : scroller.style.position,
+      top: isDoc ? document.body.style.top : scroller.style.top,
+      width: isDoc ? document.body.style.width : scroller.style.width,
+    };
+
+    // lock
+    if (isDoc) {
+      document.body.style.position = "fixed";
+      document.body.style.top = `-${scrollTop}px`;
+      document.body.style.width = "100%";
+    } else {
+      scroller.style.overflow = "hidden";
+    }
+
+    // iOS: block touchmove from bubbling and scrolling the page
+    const prevent = (e) => e.preventDefault();
+    document.addEventListener("touchmove", prevent, { passive: false });
+
+    return () => {
+      document.removeEventListener("touchmove", prevent);
+
+      if (isDoc) {
+        document.body.style.position = prev.position || "";
+        document.body.style.top = prev.top || "";
+        document.body.style.width = prev.width || "";
+        window.scrollTo(0, scrollTop);
+      } else {
+        scroller.style.overflow = prev.overflow || "";
+        scroller.style.position = prev.position || "";
+        scroller.style.top = prev.top || "";
+        scroller.style.width = prev.width || "";
+        scroller.scrollTop = scrollTop;
+      }
+    };
+  }, [targetRef, active]);
+}
+
+// finds the nearest scrollable ancestor of the target
+function getScrollContainer(el) {
+  let node = el;
+  while (node && node !== document.body && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    const canScrollY =
+      /(auto|scroll|overlay)/.test(style.overflowY) &&
+      node.scrollHeight > node.clientHeight;
+    if (canScrollY) return node;
+    node = node.parentElement;
+  }
+  return null;
 }
