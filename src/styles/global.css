@@ -536,8 +536,8 @@ input[type="range"] { width: 100%; }
   /* Make sure inline SVGs in the little squares render crisply */
   .tile-icon svg {
     display: block;
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     opacity: .92;
   }
   

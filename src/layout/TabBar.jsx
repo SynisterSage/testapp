@@ -9,7 +9,7 @@ function Tab({ to, label, Icon }) {
       className={({ isActive }) => "tab" + (isActive ? " tab--active" : "")}
     >
       <div className="tab-icon" aria-hidden="true">
-        <Icon size={22} strokeWidth={1.7} />
+        <Icon size={20} strokeWidth={1.7} />
       </div>
       <div className="tab-label">{label}</div>
     </NavLink>

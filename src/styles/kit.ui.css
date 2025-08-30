@@ -18,7 +18,8 @@
   font-size: 18px;
   line-height: 1;
 }
-.kit--compact .list-left .tile-icon { line-height: 1; }
+.kit--compact .list-left .tile-icon { line-height: 1;  width: 36px;
+  height: 36px; }
 
 /* ---------- Templates tile: glassy purple (match Home hero), no chevron ---------- */
 .kit--compact .tile--template {

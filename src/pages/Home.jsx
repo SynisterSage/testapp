@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/AppProvider.jsx";
+import { Drum, Settings as SettingsIcon, Clock3, Clock } from "lucide-react"; // use same icons as TabBar
 
 function summarizeKit(drums) {
   if (!drums?.length) return null;
@@ -13,25 +14,6 @@ function summarizeKit(drums) {
   if (toms.length) pills.push(`${toms.join(" / ")}″ Toms`);
   return pills;
 }
-
-const IconTune = () => (
-  <svg viewBox="0 0 24 24" width="18" height="18">
-    <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.8"/>
-    <path d="M12 5v7l4 3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-  </svg>
-);
-const IconKit = () => (
-  <svg viewBox="0 0 24 24" width="18" height="18">
-    <ellipse cx="12" cy="9" rx="7" ry="3.5" fill="none" stroke="currentColor" strokeWidth="1.8"/>
-    <path d="M5 9v6c0 2.3 3.1 4 7 4s7-1.7 7-4V9" fill="none" stroke="currentColor" strokeWidth="1.8"/>
-  </svg>
-);
-const IconSettings = () => (
-  <svg viewBox="0 0 24 24" width="18" height="18">
-    <path d="M19.4 15a8 8 0 0 0 0-6l2.1-1.2-2-3.4-2.4 1.4a8 8 0 0 0-5.2-2L11.4 1H8.6l-.5 2.8a8 8 0 0 0-5.2 2L.6 4.4l-2 3.4L.7 9A8 8 0 0 0 .7 15l-2.1 1.2 2 3.4 2.4-1.4a8 8 0 0 0 5.2 2l.5 2.8h2.8l.5-2.8a8 8 0 0 0 5.2-2l2.4 1.4 2-3.4L19.4 15z" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-    <circle cx="12" cy="12" r="3" fill="currentColor" opacity=".16"/>
-  </svg>
-);
 
 const ArrowBadge = () => (
   <span className="tile-arrow" aria-hidden="true">
@@ -79,7 +61,9 @@ export default function Home() {
           <div className="brand-tag-title">OVERTONE</div>
           <div className="brand-tag-sub">Mobile Drum Tuner</div>
         </div>
-        <button className="top-gear" aria-label="Settings" onClick={() => navigate("/settings")}>⚙︎</button>
+        <button className="top-gear" aria-label="Settings" onClick={() => navigate("/settings")}>
+          <SettingsIcon size={20} strokeWidth={1.8} />
+        </button>
       </header>
 
       {/* Welcome row with time-of-day */}
@@ -97,10 +81,10 @@ export default function Home() {
 
       {/* Grid */}
       <section className="dash-grid">
-        {/* Row 1: YOUR KIT (wide, scrollable pills) */}
+        {/* Row 1: YOUR KIT */}
         <div className="dash-tile dash-tile--wide dash-tile--kit" onClick={() => navigate("/kit")} role="button" tabIndex={0}>
           <div className="tile-head">
-            <div className="tile-icon"><IconKit/></div>
+            <div className="tile-icon"><Drum size={18} strokeWidth={1.8} /></div>
             <div className="tile-title">Your Kit</div>
           </div>
           <div className="tile-sub">Sizes, lugs, targets</div>
@@ -114,15 +98,10 @@ export default function Home() {
           <ArrowBadge />
         </div>
 
-        {/* Row 2: RECENT SESSIONS (wide) */}
+        {/* Row 2: RECENT SESSIONS */}
         <div className="dash-tile dash-tile--wide dash-tile--sessions" onClick={() => navigate("/tuner")} role="button" tabIndex={0}>
           <div className="tile-head">
-            <div className="tile-icon">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                <path d="M12 7v5l3 2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </div>
+            <div className="tile-icon"><Clock size={18} strokeWidth={1.8} /></div>
             <div className="tile-title">Recent Sessions</div>
           </div>
 
@@ -155,10 +134,10 @@ export default function Home() {
           <ArrowBadge />
         </div>
 
-        {/* Row 3: TUNE + SETTINGS (half tiles) */}
+        {/* Row 3: TUNE + SETTINGS */}
         <button className="dash-tile dash-tile--equal" onClick={() => navigate("/tuner")}>
           <div className="tile-head">
-            <div className="tile-icon"><IconTune/></div>
+            <div className="tile-icon"><Clock3 size={18} strokeWidth={1.8} /></div>
             <div className="tile-title">Tune</div>
           </div>
           <div className="tile-sub">Live HZ & Cents</div>
@@ -167,7 +146,7 @@ export default function Home() {
 
         <button className="dash-tile dash-tile--equal" onClick={() => navigate("/settings")}>
           <div className="tile-head">
-            <div className="tile-icon"><IconSettings/></div>
+            <div className="tile-icon"><SettingsIcon size={18} strokeWidth={1.8} /></div>
             <div className="tile-title">Settings</div>
           </div>
           <div className="tile-sub">Detection & Appearance</div>
