@@ -20,7 +20,7 @@
 }
 /* Panels / cards */
 .kit--compact .panel { padding: var(--k-pad); border-radius: var(--k-radius); }
-.kit--compact .list-stack .panel + .panel { margin-top: 3px; }
+.kit--compact .list-stack .panel + .panel { margin-top: 2px; }
 
 /* Templates tile — tighter */
 .kit--compact .dash-tile { margin-bottom: 10px; }

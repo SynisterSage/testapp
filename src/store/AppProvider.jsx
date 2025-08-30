@@ -16,11 +16,7 @@ import {
   logoutFirebase,
 } from "../lib/auth";
 
-import {
-  loadUserState,
-  saveUserState,
-  patchUserState,
-} from "../lib/db";
+import { loadUserStateWithFallback, saveUserState, patchUserState, saveKit } from "../lib/db";
 
 import {
   debounceCloudSave,
@@ -310,7 +306,7 @@ export default function AppProvider({ children }) {
       const local = readLocal(LS_KEY) || {};
 
       try {
-        const remote = await loadUserState(user.uid);
+        const remote = await loadUserStateWithFallback(user.uid);
 
         if (remote) {
           const mergedKit = preferLocalKit(remote.kit, local.kit) ?? initialState.kit;
@@ -391,9 +387,7 @@ export default function AppProvider({ children }) {
     if (uid) {
       debounceCloudSave(uid, () => {
         const { kit, settings, sessions, activeDrumId } = state;
-        patchUserState(uid, { kit, settings, sessions, activeDrumId }).catch(
-          () => {}
-        );
+         Promise.all([patchUserState(uid, { kit, settings, sessions, activeDrumId }), saveKit(uid, kit) ]).catch(() => {});
       });
     }
   }, [

@@ -6,7 +6,7 @@ import StripChart from "../components/StripChart.jsx";
 import { suggestHz } from "../lib/targets.js";
 import "../styles/tuner.css";
 
-// ---------- helpers ----------
+/* ---------- helpers ---------- */
 const log2 = (x) => Math.log(x) / Math.log(2);
 const hzToCentsDiff = (hz, target) => 1200 * log2(hz / Math.max(1e-6, target));
 const centsToRatio = (c) => Math.pow(2, (c || 0) / 1200);
@@ -46,10 +46,8 @@ function useClock() {
   return `${h12}:${mins} ${ampm}`;
 }
 
-// sequential 0..n-1
 const lugOrderSequential = (n) => Array.from({ length: n }, (_, i) => i);
 
-// defaults
 function defaultLugsFor(drum) {
   if (!drum) return 8;
   const s = drum.size_in || 14;
@@ -58,47 +56,32 @@ function defaultLugsFor(drum) {
   return s <= 13 ? 6 : 8;
 }
 
+const emptyHead = (lugs) => ({
+  lugs: Array.from({ length: lugs }, () => ({ hz: 0, cents: 0, locked: false, at: 0 })),
+  meta: { avgHz: 0, spreadCents: 0 },
+});
+
 function ensureHeadTunedShape(drum, head, lugs) {
   const t = drum?.tuned || {}, hv = t?.[head];
   if (Array.isArray(hv?.lugs) && hv.lugs.length === lugs) return hv;
-  return { lugs: Array.from({ length: lugs }, () => ({ hz: 0, cents: 0, locked: false, at: 0 })), meta: { avgHz: 0, spreadCents: 0 } };
+  return emptyHead(lugs);
 }
 
-// union merge (keep any local/store locks)
-function mergeHeadShapes(local, storeShape, lugCount) {
-  const base = storeShape && Array.isArray(storeShape.lugs)
-    ? storeShape
-    : { lugs: Array.from({ length: lugCount }, () => ({ hz: 0, cents: 0, locked: false, at: 0 })), meta: { avgHz: 0, spreadCents: 0 } };
-
-  const lugs = Array.from({ length: lugCount }, (_, i) => {
-    const st = base.lugs[i] || { hz: 0, cents: 0, locked: false, at: 0 };
-    const lc = local?.lugs?.[i] || { hz: 0, cents: 0, locked: false, at: 0 };
-    const locked = lc.locked || st.locked;
-    const hz   = st.locked ? st.hz   : lc.hz;
-    const cents= st.locked ? st.cents: lc.cents;
-    const at   = st.locked ? st.at   : lc.at;
-    return { hz: hz || 0, cents: cents || 0, locked, at: at || 0 };
-  });
-
-  const lockedArr = lugs.filter(l => l.locked);
-  const avgHz = lockedArr.length ? Math.round(lockedArr.reduce((s, l) => s + l.hz, 0) / lockedArr.length) : 0;
-  const centsVals = lockedArr.map(l => l.cents);
-  const spread = centsVals.length ? Math.round(Math.max(...centsVals) - Math.min(...centsVals)) : 0;
-
-  return { lugs, meta: { avgHz, spreadCents: spread } };
-}
-
-// per-lug offsets
-function lugOffsetsFor(drum, head, lugCount) {
-  const arr = new Array(lugCount).fill(0);
-  if (!drum) return arr;
-  if (drum.type === "snare") {
-    const a = 0, b = Math.floor(lugCount / 2) % lugCount;
-    arr[a] = -12; arr[b] = -12;
+/** Snap obvious harmonics (2×/3×/4×/5×) down toward the target fundamental. */
+function snapToSubharmonic(hz, target) {
+  if (!hz || !target) return hz;
+  let best = hz, bestErr = Math.abs(hz - target);
+  for (const k of [2, 3, 4, 5]) {
+    const cand = hz / k;
+    if (cand >= target * 0.5 && cand <= target * 1.5) {
+      const err = Math.abs(cand - target);
+      if (err < bestErr * 0.75) { best = cand; bestErr = err; }
+    }
   }
-  return arr;
+  return best;
 }
 
+/* ============= Component ============= */
 export default function Tuner() {
   const { state, actions } = useAppStore();
   const navigate = useNavigate();
@@ -106,23 +89,29 @@ export default function Tuner() {
 
   const drums = state.kit.drums || [];
   const hasKit = drums.length > 0;
+
+  // respect whatever drum user chose before
   const activeId = state.activeDrumId || drums[0]?.id || null;
   const activeIndex = Math.max(0, drums.findIndex(d => d.id === activeId));
   const active = drums[activeIndex] || null;
 
-  // per-lug flow
-  const [head, setHead] = useState("batter");          // default Batter
-  const headRef = useRef(head);
-  useEffect(() => { headRef.current = head; }, [head]);
+  // refs to defeat stale closures
+  const drumsRef = useRef(drums); useEffect(()=>{ drumsRef.current = drums; }, [drums]);
+  const activeRef = useRef(active); useEffect(()=>{ activeRef.current = active; }, [active]);
+  const activeIndexRef = useRef(activeIndex); useEffect(()=>{ activeIndexRef.current = activeIndex; }, [activeIndex]);
+
+  // head + lug
+  const [head, setHead] = useState("batter");
+  const headRef = useRef(head); useEffect(() => { headRef.current = head; }, [head]);
 
   const lugCount = useMemo(() => defaultLugsFor(active), [active]);
+  const lugCountRef = useRef(lugCount); useEffect(()=>{ lugCountRef.current = lugCount; }, [lugCount]);
   const order = useMemo(() => lugOrderSequential(lugCount), [lugCount]);
+  const orderRef = useRef(order); useEffect(()=>{ orderRef.current = order; }, [order]);
+
   const [lugPos, setLugPos] = useState(0);
   const activeLug = order[lugPos] ?? 0;
-
-  // keep current lug in a ref so RAF loop always has the latest lug
-  const activeLugRef = useRef(activeLug);
-  useEffect(() => { activeLugRef.current = activeLug; }, [activeLug]);
+  const activeLugRef = useRef(activeLug); useEffect(() => { activeLugRef.current = activeLug; }, [activeLug]);
 
   // settings
   const baseLock = state.settings.lockCents ?? 5;
@@ -133,78 +122,114 @@ export default function Tuner() {
   const bpHigh = state.settings.bandpassHighHz ?? 400;
   const autoAdvance = state.settings.autoAdvanceOnLock ?? true;
 
+  // anti double-lock
+  const rearmMsAfterLock = state.settings.rearmMsAfterLock ?? 1000;
+  const requireSilenceMs = state.settings.requireSilenceMs ?? 280;
+  const silenceGateFactor = 0.6;
+
+  // next-lug step timer
+  const nextLugTimerRef = useRef(null);
+  const clearNextLugTimer = () => { if (nextLugTimerRef.current) { clearTimeout(nextLugTimerRef.current); nextLugTimerRef.current = null; } };
+
+  // latest-write guard
+  const lastWriteAtRef = useRef({ batter: 0, reso: 0 });
+
   // targets
   const headTargetHz = useMemo(() => {
-    if (!active) return 0;
-    const batter = active.target?.batter_hz ?? suggestHz(active.type, active.size_in);
+    const act = active;
+    if (!act) return 0;
+    const batter = act.target?.batter_hz ?? suggestHz(act.type, act.size_in);
     if (head === "reso") {
-      const ratio = active.target?.reso_ratio ?? 1.06;
+      const ratio = act.target?.reso_ratio ?? 1.06;
       return Math.max(1, batter * ratio);
     }
     return Math.max(1, batter);
   }, [active, head]);
 
-  const lugOffsetsCents = useMemo(() => lugOffsetsFor(active, head, lugCount), [active, head, lugCount]);
+  const headTargetRef = useRef(headTargetHz); useEffect(()=>{ headTargetRef.current = headTargetHz; }, [headTargetHz]);
+
+  const lugOffsetsCents = useMemo(() => {
+    const arr = new Array(lugCount).fill(0);
+    if (active?.type === "snare") { const a = 0, b = Math.floor(lugCount / 2) % lugCount; arr[a] = -12; arr[b] = -12; }
+    return arr;
+  }, [active, lugCount]);
+
   const lugTargetsHz = useMemo(() => lugOffsetsCents.map(c => Math.max(1, headTargetHz * centsToRatio(c))), [lugOffsetsCents, headTargetHz]);
-  const lugTargetsRef = useRef(lugTargetsHz);
-  useEffect(() => { lugTargetsRef.current = lugTargetsHz; }, [lugTargetsHz]);
+  const lugTargetsRef = useRef(lugTargetsHz); useEffect(() => { lugTargetsRef.current = lugTargetsHz; }, [lugTargetsHz]);
 
   // mic + pitch
   const analyserRef = useRef(null);
   const rafRef = useRef(null);
   const ctxRef = useRef(null);
   const streamRef = useRef(null);
+  const hpRef = useRef(null); // dynamic band-pass (HPF)
+  const lpRef = useRef(null); // dynamic band-pass (LPF)
   const [reading, setReading] = useState({ hz: 0, cents: 0, level: 0 });
   const [history, setHistory] = useState([]);
   const [micStatus, setMicStatus] = useState("idle");
   const [micKey, setMicKey] = useState(0);
-
   const [justLocked, setJustLocked] = useState(false);
 
   // timers/smoothing
   const zoneMsRef = useRef(0);
   const lastKeyRef = useRef(null);
   const hzBufRef = useRef([]);
-  const rearmAtRef = useRef(0);            // simple cool-down timestamp
+  const rearmAtRef = useRef(0);
+  const needSilenceRef = useRef(false);
+  const silentMsRef = useRef(0);
 
-  // ---- LOCAL HEAD (state + ref) ----
+  // local view for CURRENT head (UI only; store is truth)
   const [headLocal, setHeadLocal] = useState(() => ensureHeadTunedShape(active, head, lugCount));
-  const headLocalRef = useRef(headLocal);
-  useEffect(() => { headLocalRef.current = headLocal; }, [headLocal]);
+  const headLocalRef = useRef(headLocal); useEffect(() => { headLocalRef.current = headLocal; }, [headLocal]);
 
-  // completion helpers (for chip ✓)
-  function headCompleteFromStore(drum, h) {
-    const lugs = ensureHeadTunedShape(drum, h, defaultLugsFor(drum)).lugs;
-    return lugs.length > 0 && lugs.every(l => l.locked);
-  }
-  const drumComplete = (d) => headCompleteFromStore(d, "batter") && headCompleteFromStore(d, "reso");
-
-  // refresh local WHEN drum/head/lugCount changes (and reset to Lug 1)
+  // hydrate local when drum/head/lugs change
   useEffect(() => {
-    const fresh = ensureHeadTunedShape(active, head, lugCount);
-    setHeadLocal(fresh);
-    headLocalRef.current = fresh;
-    setLugPos(0);
-    activeLugRef.current = 0;
+    clearNextLugTimer();
+    const act = activeRef.current;
+    const hv = ensureHeadTunedShape(act, headRef.current, lugCountRef.current);
+    setHeadLocal(hv); headLocalRef.current = hv;
+    setLugPos(0); activeLugRef.current = 0;
     setJustLocked(false);
     zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = [];
+    needSilenceRef.current = false; silentMsRef.current = 0;
   }, [active?.id, head, lugCount]);
 
-  // merge store-tuned into local (DO NOT reset lugPos)
+  // rehydrate from store if store is as new as our last local write
   useEffect(() => {
-    const storeHead = ensureHeadTunedShape(active, head, lugCount);
-    setHeadLocal(prev => {
-      const merged = mergeHeadShapes(prev, storeHead, lugCount);
-      headLocalRef.current = merged;
-      return merged;
-    });
-  }, [active?.tuned, head, lugCount, active?.id]);
+    const act = activeRef.current;
+    const h = headRef.current;
+    const hv = ensureHeadTunedShape(act, h, lugCountRef.current);
+    const incomingMaxAt = Math.max(0, ...hv.lugs.map(l => l.at || 0));
+    const guard = lastWriteAtRef.current[h] || 0;
+    if (incomingMaxAt >= guard) { setHeadLocal(hv); headLocalRef.current = hv; }
+  }, [active?.tuned, active?.id, head, lugCount]);
+
+  // chip done (store truth)
+  const drumComplete = (d) => {
+    const b = ensureHeadTunedShape(d, "batter", defaultLugsFor(d));
+    const r = ensureHeadTunedShape(d, "reso",   defaultLugsFor(d));
+    return b.lugs.length && b.lugs.every(x=>x.locked) && r.lugs.length && r.lugs.every(x=>x.locked);
+  };
+
+  // manual head switch
+  function switchHead(h) {
+    if (h === headRef.current) return;
+    clearNextLugTimer();
+    setHead(h); headRef.current = h;
+    const act = activeRef.current;
+    const hv = ensureHeadTunedShape(act, h, lugCountRef.current);
+    setHeadLocal(hv); headLocalRef.current = hv;
+    setLugPos(0); activeLugRef.current = 0;
+    setJustLocked(false);
+    zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = [];
+    needSilenceRef.current = false; silentMsRef.current = 0;
+  }
 
   // autoscroll active chip
   const activeChipRef = useRef(null);
-  useEffect(() => { activeChipRef.current?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); }, [activeId]);
+  useEffect(() => { activeChipRef.current?.scrollIntoView({ behavior:"smooth", inline:"center", block:"nearest" }); }, [activeId]);
 
-  // mic init + loop  (NOTE: loop reads current lug/head/targets via refs)
+  // mic setup
   useEffect(() => {
     if (!hasKit || !active) { setMicStatus("idle"); return; }
     if (!navigator.mediaDevices?.getUserMedia) { setMicStatus("unavailable"); return; }
@@ -224,10 +249,14 @@ export default function Tuner() {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         ctxRef.current = ctx;
         const src = ctx.createMediaStreamSource(stream);
-        const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = bpLow;
-        const lp = ctx.createBiquadFilter(); lp.type = "lowpass";  lp.frequency.value = bpHigh;
+
+        const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = bpLow;  // initial
+        const lp = ctx.createBiquadFilter(); lp.type = "lowpass";  lp.frequency.value = bpHigh; // initial
+        hpRef.current = hp; lpRef.current = lp;
+
         const an = ctx.createAnalyser(); an.fftSize = 2048; analyserRef.current = an;
         src.connect(hp); hp.connect(lp); lp.connect(an);
+
         const buf = new Float32Array(an.fftSize);
         setMicStatus("ok");
 
@@ -239,7 +268,7 @@ export default function Tuner() {
 
           const { hz: hzRaw, rms } = detectPitchAC(buf, ctx.sampleRate);
 
-          // median smoothing over last 5 loud frames
+          // median smoothing
           let hzSmooth = hzRaw;
           if (rms >= rmsThreshold && hzRaw) {
             const b = hzBufRef.current; b.push(hzRaw); if (b.length > 5) b.shift();
@@ -249,19 +278,22 @@ export default function Tuner() {
             hzBufRef.current = [];
           }
 
-          // UI readout uses current head's target
           const currLug = activeLugRef.current;
           const targets = lugTargetsRef.current || [];
-          const targetHz = targets[currLug] || headTargetHz || 0;
-          const cents = targetHz ? hzToCentsDiff(hzSmooth || 1, targetHz) : 0;
+          const targetHz = targets[currLug] || headTargetRef.current || 0;
 
-          setReading({ hz: hzSmooth | 0, cents, level: rms });
+          // fold obvious harmonics down toward the target
+          const hzFund = snapToSubharmonic(hzSmooth, targetHz);
+
+          const cents = targetHz ? hzToCentsDiff(hzFund || 1, targetHz) : 0;
+
+          setReading({ hz: hzFund | 0, cents, level: rms });
           setHistory(arr => {
             const next=[...arr, Number.isFinite(cents)?cents:0];
             return next.length>120?next.slice(next.length-120):next;
           });
 
-          onFrame(hzSmooth, cents, rms >= rmsThreshold, dt, now);
+          onFrame(hzFund, cents, rms, dt, now);
         };
         loop();
       } catch (e) {
@@ -277,138 +309,170 @@ export default function Tuner() {
       try { ctxRef.current && ctxRef.current.close(); } catch {}
       try { streamRef.current?.getTracks()?.forEach(t => t.stop()); } catch {}
     };
-  // only restart when device/filters change or drum changes
   }, [hasKit, activeId, bpLow, bpHigh, rmsThreshold, micKey]);
 
-  // lock + advance (reads current lug/head via refs)
-  function onFrame(hz, cents, loud, dt, nowTs) {
-    if (!active) return;
+  // dynamically steer the band-pass around the current head target
+  useEffect(() => {
+    if (!hpRef.current || !lpRef.current || !ctxRef.current) return;
+    // keep the fundamental for low Hz (60–90) while trimming junk
+    const low  = Math.max(20, Math.min(80, headTargetHz * 0.40));
+    const high = Math.max(low + 150, Math.min(900, headTargetHz * 3));
+    const t = ctxRef.current.currentTime;
+    hpRef.current.frequency.setTargetAtTime(low,  t, 0.02);
+    lpRef.current.frequency.setTargetAtTime(high, t, 0.02);
+  }, [headTargetHz]);
 
-    // cool-down: after a lock, ignore new locks briefly
+  /* ---------- lock + advance ---------- */
+  function onFrame(hz, cents, rms, dt, nowTs) {
+    const act = activeRef.current;
+    if (!act) return;
+
+    // gates
     if (nowTs < rearmAtRef.current) { zoneMsRef.current = 0; return; }
+    if (needSilenceRef.current) {
+      if (rms < rmsThreshold * silenceGateFactor) {
+        silentMsRef.current += dt;
+        if (silentMsRef.current < requireSilenceMs) return;
+        needSilenceRef.current = false; silentMsRef.current = 0;
+      } else { silentMsRef.current = 0; return; }
+    }
 
+    const loud = rms >= rmsThreshold;
     const currHead = headRef.current;
     const currLug  = activeLugRef.current;
-    const targets = lugTargetsRef.current || [];
-    const targetHz = targets[currLug] || headTargetHz || 0;
+    const lugsN    = lugCountRef.current;
+    const targetHz = (lugTargetsRef.current?.[currLug] || headTargetRef.current || 0);
 
     if (!targetHz || !hz || !loud) { zoneMsRef.current = 0; return; }
     if (Math.abs(cents) > lockWindow) { zoneMsRef.current = 0; return; }
     zoneMsRef.current += dt;
 
-    const key = `${active.id}-${currHead}-${currLug}`;
-    if (zoneMsRef.current >= holdMs && lastKeyRef.current !== key) {
-      lastKeyRef.current = key;
-      setJustLocked(true);
+    const key = `${act.id}-${currHead}-${currLug}`;
+    if (zoneMsRef.current < holdMs || lastKeyRef.current === key) return;
 
-      // update LOCAL head
-      const curr = headLocalRef.current || { lugs: [], meta: { avgHz: 0, spreadCents: 0 } };
-      const nextLugs = Array.from({ length: lugCount }, (_, i) =>
-        i === currLug ? { hz, cents, locked: true, at: Date.now() } :
-        (curr.lugs[i] || { hz: 0, cents: 0, locked: false, at: 0 })
-      );
-      const lockedArr = nextLugs.filter(l => l.locked);
-      const avgHz = lockedArr.length ? Math.round(lockedArr.reduce((s,l)=>s+l.hz,0)/lockedArr.length) : 0;
-      const centsVals = lockedArr.map(l=>l.cents);
-      const spread = centsVals.length ? Math.round(Math.max(...centsVals)-Math.min(...centsVals)) : 0;
-      const localHeadObj = { lugs: nextLugs, meta: { avgHz, spreadCents: spread } };
+    // ---- LOCK ----
+    lastKeyRef.current = key;
+    setJustLocked(true);
+    clearNextLugTimer();
 
-      headLocalRef.current = localHeadObj;
-      setHeadLocal(localHeadObj);
+    const ts = Date.now();
 
-      // persist to store
-      const prev = active.tuned || {};
-      actions.updateDrum(active.id, { tuned: { ...prev, [currHead]: localHeadObj } });
-      actions.addSession?.({ id: crypto.randomUUID?.() || String(Date.now()), at: Date.now(), drumId: active.id, head: currHead, hz, cents });
+    // local snapshot for current head
+    const before = headLocalRef.current || emptyHead(lugsN);
+    const nextLugs = Array.from({ length: lugsN }, (_, i) =>
+      i === currLug ? { hz, cents, locked: true, at: ts } :
+      (before.lugs[i] || { hz: 0, cents: 0, locked: false, at: 0 })
+    );
+    const lockedArr = nextLugs.filter(l => l.locked);
+    const avgHz = lockedArr.length ? Math.round(lockedArr.reduce((s,l)=>s+l.hz,0)/lockedArr.length) : 0;
+    const centsVals = lockedArr.map(l=>l.cents);
+    const spread = centsVals.length ? Math.round(Math.max(...centsVals)-Math.min(...centsVals)) : 0;
+    const updatedHead = { lugs: nextLugs, meta: { avgHz, spreadCents: spread } };
 
-      if (!autoAdvance) return;
+    setHeadLocal(updatedHead); headLocalRef.current = updatedHead;
 
-      const allLockedLocal = nextLugs.every(l => l.locked);
+    // persist to store for CURRENT drum + head
+    const prev = act.tuned || {};
+    const tunedAfter = { ...prev, [currHead]: updatedHead };
+    lastWriteAtRef.current[currHead] = ts;
+    actions.updateDrum(act.id, { tuned: tunedAfter });
+    actions.addSession?.({ id: crypto.randomUUID?.() || String(ts), at: ts, drumId: act.id, head: currHead, hz, cents });
 
-      // Decide next step
-      if (allLockedLocal) {
-        if (currHead === "batter") {
-          // Switch to Reso (use existing progress if any; don't overwrite)
-          setTimeout(() => {
-            setHead("reso"); headRef.current = "reso";
-            const resoFromStore = ensureHeadTunedShape(active, "reso", lugCount);
-            headLocalRef.current = resoFromStore;
-            setHeadLocal(resoFromStore);
-            setLugPos(0);
-            activeLugRef.current = 0;
-            zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = []; setJustLocked(false);
-          }, 380);
-          rearmAtRef.current = performance.now() + 320;
+    // re-arm/silence gate
+    rearmAtRef.current = nowTs + rearmMsAfterLock;
+    needSilenceRef.current = true;
+    zoneMsRef.current = 0; hzBufRef.current = []; setJustLocked(false);
+
+    if (!autoAdvance) return;
+
+    // completion checks using tunedAfter
+    const currComplete   = tunedAfter[currHead]?.lugs?.every(l => l.locked);
+    const batterComplete = tunedAfter.batter?.lugs?.length === lugsN && tunedAfter.batter.lugs.every(l => l.locked);
+    const resoComplete   = tunedAfter.reso?.lugs?.length   === lugsN && tunedAfter.reso.lugs.every(l => l.locked);
+
+    if (currComplete) {
+      if (currHead === "batter") {
+        // Batter done → switch to Reso immediately
+        switchHead("reso");
+        return;
+      } else {
+        // Reso done
+        if (batterComplete) {
+          // Both heads done → advance to NEXT drum (wrap to first)
+          const idx = activeIndexRef.current;
+          const drumsArr = drumsRef.current || [];
+          const nextIdx = drumsArr.length ? ((idx + 1) % drumsArr.length) : idx;
+          const nextDrum = drumsArr[nextIdx];
+          if (nextDrum) {
+            actions.setActiveDrumId(nextDrum.id);
+            setHead("batter"); headRef.current = "batter";
+            const hv = ensureHeadTunedShape(nextDrum, "batter", defaultLugsFor(nextDrum));
+            setHeadLocal(hv); headLocalRef.current = hv;
+            setLugPos(0); activeLugRef.current = 0;
+          }
           return;
         } else {
-          // Finished Reso: if Batter incomplete, go back to Batter; else next drum
-          const batterDone = headCompleteFromStore(active, "batter");
-          if (!batterDone) {
-            setTimeout(() => {
-              setHead("batter"); headRef.current = "batter";
-              const batterFromStore = ensureHeadTunedShape(active, "batter", lugCount);
-              headLocalRef.current = batterFromStore;
-              setHeadLocal(batterFromStore);
-              setLugPos(0);
-              activeLugRef.current = 0;
-              zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = []; setJustLocked(false);
-            }, 380);
-            rearmAtRef.current = performance.now() + 320;
-            return;
-          }
-          // both heads done → next drum
-          setTimeout(() => goNext(), 500);
-          rearmAtRef.current = performance.now() + 380;
+          // Reso finished first → go finish Batter
+          switchHead("batter");
           return;
         }
       }
-
-      // Next lug (strictly in order)
-      setTimeout(() => {
-        setLugPos(p => {
-          const np = (p + 1) % order.length;
-          activeLugRef.current = order[np] ?? np;
-          return np;
-        });
-        zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = []; setJustLocked(false);
-      }, 240);
-
-      // short cool-down so we don't double-lock on the next frame
-      rearmAtRef.current = performance.now() + 280;
     }
+
+    // not finished → step to next lug (NO wrap)
+    nextLugTimerRef.current = setTimeout(() => {
+      setLugPos(p => {
+        const ord = orderRef.current || [];
+        const np = Math.min(p + 1, ord.length - 1);
+        activeLugRef.current = ord[np] ?? np;
+        return np;
+      });
+      zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = [];
+      nextLugTimerRef.current = null;
+    }, 260);
   }
 
-  // navigation (chip ✓ = both heads done)
+  // nav (wrap to first on next)
   function goIndex(i) {
-    const idx = Math.max(0, Math.min(drums.length - 1, i));
-    const drum = drums[idx];
+    const drumsArr = drumsRef.current || [];
+    const idx = ((i % drumsArr.length) + drumsArr.length) % drumsArr.length; // clamp+wrap
+    const drum = drumsArr[idx];
     if (drum) {
+      clearNextLugTimer();
       actions.setActiveDrumId(drum.id);
-      // default to Batter when switching drums (user can tap Reso manually)
-      const nextHead = "batter";
-      setHead(nextHead);
-      headRef.current = nextHead;
-      // local resets via effect on [active?.id, head, lugCount]
+      setHead("batter"); headRef.current = "batter";
+      const hv = ensureHeadTunedShape(drum, "batter", defaultLugsFor(drum));
+      setHeadLocal(hv); headLocalRef.current = hv;
+      setLugPos(0); activeLugRef.current = 0;
     }
   }
   const goNext = () => {
-    const nextIdx = activeIndex + 1 >= drums.length ? activeIndex : activeIndex + 1;
-    goIndex(nextIdx);
+    const idx = activeIndexRef.current;
+    const drumsArr = drumsRef.current || [];
+    if (!drumsArr.length) return;
+    goIndex((idx + 1) % drumsArr.length); // wrap
   };
-  const goPrev = () => goIndex(activeIndex - 1);
+  const goPrev = () => {
+    const idx = activeIndexRef.current;
+    const drumsArr = drumsRef.current || [];
+    if (!drumsArr.length) return;
+    goIndex((idx - 1 + drumsArr.length) % drumsArr.length); // wrap back
+  };
 
-  // manual reset head
+  // reset current head only
   function resetCurrentHead() {
-    if (!active) return;
-    const fresh = { lugs: Array.from({ length: lugCount }, () => ({ hz: 0, cents: 0, locked: false, at: 0 })), meta: { avgHz: 0, spreadCents: 0 } };
-    const prev = active.tuned || {};
-    actions.updateDrum(active.id, { tuned: { ...prev, [head]: fresh } });
-    headLocalRef.current = fresh;
-    setHeadLocal(fresh);
-    setLugPos(0);
-    activeLugRef.current = 0;
+    const act = activeRef.current; if (!act) return;
+    clearNextLugTimer();
+    const lugsN = lugCountRef.current;
+    const fresh = emptyHead(lugsN);
+    const prev = act.tuned || {};
+    actions.updateDrum(act.id, { tuned: { ...prev, [headRef.current]: fresh } });
+    setHeadLocal(fresh); headLocalRef.current = fresh;
+    lastWriteAtRef.current[headRef.current] = Date.now();
+    setLugPos(0); activeLugRef.current = 0;
     setJustLocked(false);
     zoneMsRef.current = 0; lastKeyRef.current = null; hzBufRef.current = [];
+    needSilenceRef.current = false; silentMsRef.current = 0;
   }
 
   // mic warnings
@@ -419,11 +483,13 @@ export default function Tuner() {
     micStatus === "noinput" ? "No microphone input found" :
     "Could not start microphone";
 
-  // VIEW from ref (ensures checks render immediately)
+  // derived view
   const headView = headLocalRef.current || headLocal;
   const lockedSet = new Set(headView.lugs.map((l,i) => (l.locked ? i : null)).filter(v => v !== null));
   const deltaMap = new Map(headView.lugs.map((l,i) => [i, l.cents || 0]));
+  const activeLugTargetHz = (lugTargetsRef.current?.[activeLug] || headTargetRef.current);
 
+  /* ---------- render ---------- */
   if (!hasKit) {
     return (
       <div className="tuner-page">
@@ -461,9 +527,6 @@ export default function Tuner() {
     );
   }
 
-  // current active lug target for the UI readout only
-  const activeLugTargetHz = (lugTargetsHz[activeLug] || headTargetHz);
-
   return (
     <div className="tuner-page tuner-page--fixed">
       {/* header */}
@@ -476,7 +539,7 @@ export default function Tuner() {
         <div className="tile-title">Tuner</div><div className="top-clock">{clock}</div>
       </div>
 
-      {/* chips (purple ✓ when BOTH heads done) */}
+      {/* chips (✓ shows when both heads done; persists) */}
       <div className="drum-picker drum-picker--tight">
         <div className="drum-scroll mask-fade-lr">
           {drums.map((d,i)=>{
@@ -487,7 +550,7 @@ export default function Tuner() {
                 ref={isActive?activeChipRef:null}
                 className={`chip ${isActive?"chip--active":""} ${isDone?"chip--done":""}`}
                 onClick={()=>goIndex(i)}
-                title={isDone?"Completed — tap to retune":"Tap to tune"}>
+                title={isDone?"Completed — tap to review/retune":"Tap to tune"}>
                 <span className="chip-emoji">{d.type==="kick"?"🦶":d.type==="snare"?"🥁":"🛢️"}</span>
                 <span className="chip-label">{d.size_in}″ {d.type}</span>
                 {isDone && <span style={{ marginLeft: 6 }}>✓</span>}
@@ -497,7 +560,7 @@ export default function Tuner() {
         </div>
       </div>
 
-      {/* head controls (both selectable; default Batter) */}
+      {/* head controls (clickable) */}
       <div className="tuner-head panel">
         <div className="tuner-head-inner">
           <div className="tuner-head-row">
@@ -510,26 +573,15 @@ export default function Tuner() {
           </div>
           <div style={{display:"flex",justifyContent:"center",gap:8}}>
             <div className="seg" role="tablist" aria-label="Drum head">
-              <button
-                className={`seg-btn ${head==="batter"?"seg-btn--on":""}`}
-                onClick={()=>{ setHead("batter"); headRef.current="batter"; }}
-              >
-                Batter
-              </button>
-              <button
-                className={`seg-btn ${head==="reso"?"seg-btn--on":""}`}
-                onClick={()=>{ setHead("reso"); headRef.current="reso"; }}
-                title="Resonant head"
-              >
-                Reso
-              </button>
+              <button className={`seg-btn ${head==="batter"?"seg-btn--on":""}`} onClick={()=>switchHead("batter")}>Batter</button>
+              <button className={`seg-btn ${head==="reso"?"seg-btn--on":""}`} onClick={()=>switchHead("reso")} title="Resonant head">Reso</button>
             </div>
             <button className="btn-reset-ghost" onClick={resetCurrentHead}>Reset head</button>
           </div>
         </div>
       </div>
 
-      {/* lug ring */}
+      {/* ring */}
       <div className="tuner-ring-wrap">
         <LugRing
           count={lugCount}
@@ -546,7 +598,6 @@ export default function Tuner() {
         <div className="tuner-hz">
           Lug target: {Math.round(activeLugTargetHz)} Hz • {Number.isFinite(reading.cents) ? `${Math.round(reading.cents)}¢` : "—"}
         </div>
-
         <div className="cents-wrap tuner-measure">
           <div className="cents-scale"><span>-50¢</span><span>-25¢</span><span>0</span><span>+25¢</span><span>+50¢</span></div>
           <div className="cents-bar cents-bar--accent">
@@ -561,8 +612,8 @@ export default function Tuner() {
       <div className="tuner-measure">
         <StripChart values={history} lockWindow={lockWindow} height={54} />
         <div className="tuner-stats-row">
-          <div><span className="metric-label">Avg</span> {headView.meta?.avgHz || 0} Hz</div>
-          <div><span className="metric-label">Spread</span> {headView.meta?.spreadCents || 0}¢</div>
+          <div><span className="metric-label">Avg</span> {headLocal.meta?.avgHz || 0} Hz</div>
+          <div><span className="metric-label">Spread</span> {headLocal.meta?.spreadCents || 0}¢</div>
           <div><span className="metric-label">Lug</span> {activeLug + 1}/{lugCount}</div>
         </div>
       </div>

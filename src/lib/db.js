@@ -67,3 +67,18 @@ export async function saveKit(uid, kit) {
     console.error("[db] saveKit failed:", e);
   }
 }
+
+// Add this helper:
+export async function loadUserStateWithFallback(uid) {
+  const userDoc = await loadUserState(uid);           // users/{uid}
+  if (userDoc && userDoc.kit && Array.isArray(userDoc.kit?.drums)) {
+    return userDoc; // already good
+  }
+  // fall back to stable kit subdoc
+  const kitOnly = await loadKit(uid);                 // users/{uid}/state/kit
+  if (kitOnly && Array.isArray(kitOnly.drums)) {
+    return { ...(userDoc || {}), kit: kitOnly };
+  }
+  return userDoc; // could be null
+}
+

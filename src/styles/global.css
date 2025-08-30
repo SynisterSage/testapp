@@ -234,9 +234,9 @@ input[type="range"] { width: 100%; }
 .chip-label { font-size: 13px; }
 /* chip when a drum has been locked this session */
 .chip--done {
-    background: var(--accent, #8b8cfb);
+    background: (#8bfb94);
     border-color: rgba(139,140,251,0.45);
-    color: #0b0f14;              /* readable on purple */
+    color: #140c0b;              /* readable on purple */
     font-weight: 700;
   }
   
