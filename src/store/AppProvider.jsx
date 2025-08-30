@@ -16,12 +16,20 @@ import {
   logoutFirebase,
 } from "../lib/auth";
 
-import { loadUserStateWithFallback, saveUserState, patchUserState, saveKit } from "../lib/db";
+import {
+  loadUserStateWithFallback,
+  saveUserState,
+  patchUserState,
+  saveKit,
+  loadDeviceState,
+  saveDeviceState,
+} from "../lib/db";
 
 import {
   debounceCloudSave,
   persistLocal,
   readLocal,
+  ensureDeviceId,
 } from "../lib/persistence";
 
 const Ctx = createContext(null);
@@ -112,6 +120,18 @@ const templateDrums = (name) => {
 
 // -------- state --------
 const LS_KEY = "overtone:state";
+const DEVICE_CACHE_KEY = "__deviceState";
+
+// Choose which SETTINGS keys should be device-local
+const DEVICE_SETTINGS_KEYS = [
+  "theme",
+  "lockCents",
+  "holdMs",
+  "rmsThreshold",
+  "bandpassLowHz",
+  "bandpassHighHz",
+  "autoAdvanceOnLock",
+];
 
 const initialState = {
   auth: { isAuthed: false, user: null },
@@ -265,6 +285,20 @@ function lazyInit(init) {
   };
 }
 
+// helpers to split/merge device-local pieces
+function pickDeviceSettings(all) {
+  const src = all || {};
+  const out = {};
+  for (const k of DEVICE_SETTINGS_KEYS) {
+    if (k in src) out[k] = src[k];
+  }
+  return out;
+}
+
+function mergeSettings(base, add) {
+  return { ...base, ...(add || {}) };
+}
+
 export default function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState, lazyInit);
 
@@ -288,6 +322,8 @@ export default function AppProvider({ children }) {
         return;
       }
 
+      const deviceId = ensureDeviceId();
+
       const authPayload = {
         isAuthed: true,
         user: {
@@ -304,63 +340,75 @@ export default function AppProvider({ children }) {
       dispatch({ type: "LOAD_SAVED", payload: { auth: authPayload } });
 
       const local = readLocal(LS_KEY) || {};
+      const localDeviceCache = readLocal(DEVICE_CACHE_KEY) || {};
 
       try {
-        const remote = await loadUserStateWithFallback(user.uid);
+        const [remote, deviceDoc] = await Promise.all([
+          loadUserStateWithFallback(user.uid),
+          loadDeviceState(user.uid, deviceId),
+        ]);
 
-        if (remote) {
-          const mergedKit = preferLocalKit(remote.kit, local.kit) ?? initialState.kit;
+        const remoteKit = remote?.kit ?? initialState.kit;
+        const mergedKit = preferLocalKit(remoteKit, local.kit) ?? initialState.kit;
 
-          if (kitCount(remote.kit) === 0 && kitCount(local.kit) > 0) {
-            // seed remote from local (fire and forget)
-            patchUserState(user.uid, { kit: mergedKit }).catch(() => {});
-          }
-
-          const merged = {
-            kit: mergedKit,
-            sessions: Array.isArray(remote.sessions)
-              ? remote.sessions
-              : (local.sessions ?? []),
-            activeDrumId:
-              remote.activeDrumId ?? local.activeDrumId ?? null,
-            // settings precedence: initial < remote < local
-            settings: {
-              ...initialState.settings,
-              ...(remote.settings || {}),
-              ...(local.settings || {}),
-            },
-          };
-
-          dispatch({
-            type: "LOAD_SAVED",
-            payload: { ...merged, auth: authPayload },
-          });
-        } else {
-          // No remote yet → seed from local (or defaults)
-          const seed = {
-            kit: local.kit ?? initialState.kit,
-            settings: local.settings ?? initialState.settings,
-            sessions: local.sessions ?? [],
-            activeDrumId: local.activeDrumId ?? null,
-          };
-          await saveUserState(user.uid, seed);
-          dispatch({
-            type: "LOAD_SAVED",
-            payload: { ...seed, auth: authPayload },
-          });
+        // If remote has no kit but local does, seed remote from local (fire and forget)
+        if (kitCount(remoteKit) === 0 && kitCount(local.kit) > 0) {
+          patchUserState(user.uid, { kit: mergedKit }).catch(() => {});
         }
-      } catch (e) {
-        console.error("Firestore hydrate error:", e);
+
+        // Build device layer: device doc > local device cache
+        const deviceLayer = deviceDoc || localDeviceCache || {};
+
+        // Merge settings: initial < remote.settings < local.settings < deviceLayer.settings(keys only)
+        const baseSettings = {
+          ...initialState.settings,
+          ...(remote?.settings || {}),
+          ...(local?.settings || {}),
+        };
+        const deviceSettings = pickDeviceSettings(deviceLayer.settings || {});
+        const mergedSettings = mergeSettings(baseSettings, deviceSettings);
+
+        // Sessions are device-local: prefer device doc, else local
+        const mergedSessions = Array.isArray(deviceLayer.sessions)
+          ? deviceLayer.sessions
+          : (local.sessions ?? []);
+
+        const merged = {
+          kit: mergedKit,
+          sessions: mergedSessions,
+          activeDrumId: remote?.activeDrumId ?? local.activeDrumId ?? null,
+          settings: mergedSettings,
+        };
+
+        // Cache device layer locally for faster boots
+        persistLocal(DEVICE_CACHE_KEY, {
+          settings: deviceSettings,
+          sessions: mergedSessions,
+        });
+
         dispatch({
           type: "LOAD_SAVED",
-          payload: {
-            kit: local.kit ?? initialState.kit,
-            settings: local.settings ?? initialState.settings,
-            sessions: local.sessions ?? [],
-            activeDrumId: local.activeDrumId ?? null,
-            auth: authPayload,
-          },
+          payload: { ...merged, auth: authPayload },
         });
+      } catch (e) {
+        console.error("Firestore hydrate error:", e);
+
+        // Fall back to local + cached device layer
+        const deviceLayer = readLocal(DEVICE_CACHE_KEY) || {};
+        const fallbackSettings = mergeSettings(
+          { ...initialState.settings, ...(local.settings || {}) },
+          pickDeviceSettings(deviceLayer.settings || {})
+        );
+        const fallback = {
+          kit: local.kit ?? initialState.kit,
+          settings: fallbackSettings,
+          sessions: Array.isArray(deviceLayer.sessions)
+            ? deviceLayer.sessions
+            : (local.sessions ?? []),
+          activeDrumId: local.activeDrumId ?? null,
+          auth: authPayload,
+        };
+        dispatch({ type: "LOAD_SAVED", payload: fallback });
       }
 
       // after auth hydration completes we can safely persist
@@ -374,6 +422,7 @@ export default function AppProvider({ children }) {
   useEffect(() => {
     if (!hydratedRef.current) return;
 
+    // Always keep a complete local snapshot for fast cold boots
     const payload = {
       auth: state.auth,
       kit: state.kit,
@@ -383,11 +432,36 @@ export default function AppProvider({ children }) {
     };
     persistLocal(LS_KEY, payload);
 
+    // Device-layer cache (settings subset + sessions)
+    const deviceSettingsSubset = pickDeviceSettings(state.settings || {});
+    persistLocal(DEVICE_CACHE_KEY, {
+      settings: deviceSettingsSubset,
+      sessions: state.sessions,
+    });
+
+    // Cloud writes: user-level (shared) & device-level (local)
     const uid = state.auth?.user?.id;
     if (uid) {
+      const deviceId = ensureDeviceId();
+
       debounceCloudSave(uid, () => {
-        const { kit, settings, sessions, activeDrumId } = state;
-         Promise.all([patchUserState(uid, { kit, settings, sessions, activeDrumId }), saveKit(uid, kit) ]).catch(() => {});
+        const { kit, activeDrumId } = state;
+
+        // 1) Shared (user doc): sync only shared pieces (kit + activeDrumId)
+        //    We intentionally DO NOT sync settings or sessions here.
+        const sharedPatch = { kit, activeDrumId };
+
+        // 2) Device-scoped (device doc): settings subset + sessions
+        const devicePatch = {
+          settings: deviceSettingsSubset,
+          sessions: state.sessions,
+        };
+
+        Promise.all([
+          patchUserState(uid, sharedPatch),
+          saveKit(uid, kit),
+          saveDeviceState(uid, deviceId, devicePatch),
+        ]).catch(() => {});
       });
     }
   }, [
@@ -444,6 +518,7 @@ export default function AppProvider({ children }) {
       clearAll: () => {
         try {
           localStorage.removeItem(LS_KEY);
+          localStorage.removeItem(DEVICE_CACHE_KEY);
         } catch {}
         dispatch({ type: "CLEAR_ALL" });
       },
