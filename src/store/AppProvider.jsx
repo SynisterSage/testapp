@@ -18,7 +18,6 @@ import {
 
 import {
   loadUserStateWithFallback,
-  saveUserState,
   patchUserState,
   saveKit,
   loadDeviceState,
@@ -119,27 +118,15 @@ const templateDrums = (name) => {
 };
 
 // -------- state --------
-const LS_KEY = "overtone:state";
-const DEVICE_CACHE_KEY = "__deviceState";
-
-// Choose which SETTINGS keys should be device-local
-const DEVICE_SETTINGS_KEYS = [
-  "theme",
-  "lockCents",
-  "holdMs",
-  "rmsThreshold",
-  "bandpassLowHz",
-  "bandpassHighHz",
-  "autoAdvanceOnLock",
-];
+const LS_KEY = "overtone:state"; // shared cache key (per device/browser)
 
 const initialState = {
   auth: { isAuthed: false, user: null },
 
-  kit: { drums: [] },
+  kit: { drums: [] },        // SHARED across devices
   activeDrumId: null,
 
-  settings: {
+  settings: {                // SHARED across devices
     lockCents: 5,
     holdMs: 300,
     rmsThreshold: 0.02,
@@ -149,7 +136,7 @@ const initialState = {
     theme: "dark",
   },
 
-  sessions: [],
+  sessions: [],              // DEVICE-LOCAL by default
 };
 
 function kitCount(kit) {
@@ -157,22 +144,19 @@ function kitCount(kit) {
   return Array.isArray(drums) ? drums.length : 0;
 }
 
-// ⚠️ local-first: if local has drums, use it; else use remote; else empty
 function preferLocalKit(remoteKit, localKit) {
   const lc = kitCount(localKit);
   const rc = kitCount(remoteKit);
+  if (rc > 0) return normalizeKit(remoteKit);  // prefer cloud when it exists
   if (lc > 0) return normalizeKit(localKit);
-  if (rc > 0) return normalizeKit(remoteKit);
   return { drums: [] };
 }
 
 function reducer(state, action) {
   switch (action.type) {
-    // ---------- AUTH ----------
     case "LOGOUT":
       return { ...state, auth: { isAuthed: false, user: null } };
 
-    // ---------- PERSIST ----------
     case "LOAD_SAVED": {
       const incoming = action.payload || {};
       const kit = normalizeKit(incoming.kit ?? state.kit);
@@ -188,7 +172,7 @@ function reducer(state, action) {
       };
     }
 
-    // ---------- KIT ----------
+    // KIT
     case "APPLY_TEMPLATE": {
       const drums = templateDrums(action.name);
       return { ...state, kit: { drums }, activeDrumId: drums[0]?.id ?? null };
@@ -249,18 +233,17 @@ function reducer(state, action) {
     case "SET_ACTIVE_DRUM":
       return { ...state, activeDrumId: action.id };
 
-    // ---------- SETTINGS ----------
+    // SETTINGS (shared)
     case "UPDATE_SETTINGS":
       return { ...state, settings: { ...state.settings, ...action.patch } };
 
-    // ---------- SESSIONS ----------
+    // SESSIONS (device-local)
     case "ADD_SESSION":
       return {
         ...state,
         sessions: [action.session, ...state.sessions].slice(0, 20),
       };
 
-    // ---------- CLEAR ----------
     case "CLEAR_ALL":
       return JSON.parse(JSON.stringify(initialState));
 
@@ -269,12 +252,10 @@ function reducer(state, action) {
   }
 }
 
-// ----- Optional pre-seed from localStorage (so theme/kit render before first paint) -----
+// Seed from localStorage so UI paints quickly
 function lazyInit(init) {
   let cached = null;
-  try {
-    cached = JSON.parse(localStorage.getItem(LS_KEY) || "null");
-  } catch {}
+  try { cached = JSON.parse(localStorage.getItem(LS_KEY) || "null"); } catch {}
   if (!cached) return init;
   return {
     ...init,
@@ -285,36 +266,18 @@ function lazyInit(init) {
   };
 }
 
-// helpers to split/merge device-local pieces
-function pickDeviceSettings(all) {
-  const src = all || {};
-  const out = {};
-  for (const k of DEVICE_SETTINGS_KEYS) {
-    if (k in src) out[k] = src[k];
-  }
-  return out;
-}
-
-function mergeSettings(base, add) {
-  return { ...base, ...(add || {}) };
-}
-
 export default function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState, lazyInit);
-
-  // prevents the first render from clobbering saved data
   const hydratedRef = useRef(false);
 
-  // If you prefer NOT to pre-seed above, you can still keep this local hydration:
+  // Local hydration
   useEffect(() => {
     const cached = readLocal(LS_KEY);
-    if (cached) {
-      dispatch({ type: "LOAD_SAVED", payload: cached });
-    }
-    hydratedRef.current = true; // allow persisting after we tried local
+    if (cached) dispatch({ type: "LOAD_SAVED", payload: cached });
+    hydratedRef.current = true;
   }, []);
 
-  // Auth + remote merge (LOCAL wins if it has drums / settings)
+  // Auth + Remote merge: shared (user doc) + device (sessions)
   useEffect(() => {
     const unsub = listenToAuth(async (user) => {
       if (!user) {
@@ -328,9 +291,7 @@ export default function AppProvider({ children }) {
         isAuthed: true,
         user: {
           id: user.uid,
-          name:
-            user.displayName ||
-            (user.email ? user.email.split("@")[0] : "User"),
+          name: user.displayName || (user.email ? user.email.split("@")[0] : "User"),
           email: user.email || null,
           provider: user.providerData?.[0]?.providerId || "password",
         },
@@ -340,89 +301,75 @@ export default function AppProvider({ children }) {
       dispatch({ type: "LOAD_SAVED", payload: { auth: authPayload } });
 
       const local = readLocal(LS_KEY) || {};
-      const localDeviceCache = readLocal(DEVICE_CACHE_KEY) || {};
-
       try {
         const [remote, deviceDoc] = await Promise.all([
-          loadUserStateWithFallback(user.uid),
-          loadDeviceState(user.uid, deviceId),
+          loadUserStateWithFallback(user.uid),   // shared: kit + settings (+activeDrumId)
+          loadDeviceState(user.uid, deviceId),   // device: sessions (+ maybe last active)
         ]);
 
+        // KIT: prefer cloud if present, else local; seed cloud if only local exists
         const remoteKit = remote?.kit ?? initialState.kit;
-        const mergedKit = preferLocalKit(remoteKit, local.kit) ?? initialState.kit;
+        const mergedKit = preferLocalKit(remoteKit, local.kit);
 
-        // If remote has no kit but local does, seed remote from local (fire and forget)
         if (kitCount(remoteKit) === 0 && kitCount(local.kit) > 0) {
+          // seed cloud from local (fire-and-forget)
           patchUserState(user.uid, { kit: mergedKit }).catch(() => {});
+          saveKit(user.uid, mergedKit).catch(() => {});
         }
 
-        // Build device layer: device doc > local device cache
-        const deviceLayer = deviceDoc || localDeviceCache || {};
-
-        // Merge settings: initial < remote.settings < local.settings < deviceLayer.settings(keys only)
-        const baseSettings = {
+        // SETTINGS: prefer remote (so all devices align), then local, then defaults
+        const mergedSettings = {
           ...initialState.settings,
           ...(remote?.settings || {}),
           ...(local?.settings || {}),
         };
-        const deviceSettings = pickDeviceSettings(deviceLayer.settings || {});
-        const mergedSettings = mergeSettings(baseSettings, deviceSettings);
 
-        // Sessions are device-local: prefer device doc, else local
-        const mergedSessions = Array.isArray(deviceLayer.sessions)
-          ? deviceLayer.sessions
+        // SESSIONS: device-local
+        const mergedSessions = Array.isArray(deviceDoc?.sessions)
+          ? deviceDoc.sessions
           : (local.sessions ?? []);
 
-        const merged = {
-          kit: mergedKit,
-          sessions: mergedSessions,
-          activeDrumId: remote?.activeDrumId ?? local.activeDrumId ?? null,
-          settings: mergedSettings,
-        };
-
-        // Cache device layer locally for faster boots
-        persistLocal(DEVICE_CACHE_KEY, {
-          settings: deviceSettings,
-          sessions: mergedSessions,
-        });
+        const mergedActiveDrumId =
+          remote?.activeDrumId ?? local.activeDrumId ?? mergedKit.drums[0]?.id ?? null;
 
         dispatch({
           type: "LOAD_SAVED",
-          payload: { ...merged, auth: authPayload },
+          payload: {
+            auth: authPayload,
+            kit: mergedKit,
+            settings: mergedSettings,
+            sessions: mergedSessions,
+            activeDrumId: mergedActiveDrumId,
+          },
         });
       } catch (e) {
         console.error("Firestore hydrate error:", e);
-
-        // Fall back to local + cached device layer
-        const deviceLayer = readLocal(DEVICE_CACHE_KEY) || {};
-        const fallbackSettings = mergeSettings(
-          { ...initialState.settings, ...(local.settings || {}) },
-          pickDeviceSettings(deviceLayer.settings || {})
-        );
-        const fallback = {
-          kit: local.kit ?? initialState.kit,
-          settings: fallbackSettings,
-          sessions: Array.isArray(deviceLayer.sessions)
-            ? deviceLayer.sessions
-            : (local.sessions ?? []),
-          activeDrumId: local.activeDrumId ?? null,
-          auth: authPayload,
-        };
-        dispatch({ type: "LOAD_SAVED", payload: fallback });
+        // Fallback to local cache only
+        const fallbackKit = normalizeKit(local.kit ?? initialState.kit);
+        const fallbackSettings = { ...initialState.settings, ...(local.settings || {}) };
+        dispatch({
+          type: "LOAD_SAVED",
+          payload: {
+            auth: authPayload,
+            kit: fallbackKit,
+            settings: fallbackSettings,
+            sessions: local.sessions ?? [],
+            activeDrumId: local.activeDrumId ?? fallbackKit.drums[0]?.id ?? null,
+          },
+        });
       }
 
-      // after auth hydration completes we can safely persist
       hydratedRef.current = true;
     });
 
     return () => unsub();
   }, []);
 
-  // Persist to local + cloud (debounced). Skip until hydrated.
+  // Persist local cache + Cloud (shared + device). Skip until hydrated.
   useEffect(() => {
     if (!hydratedRef.current) return;
 
-    // Always keep a complete local snapshot for fast cold boots
+    // Local fast-boot cache
     const payload = {
       auth: state.auth,
       kit: state.kit,
@@ -432,45 +379,29 @@ export default function AppProvider({ children }) {
     };
     persistLocal(LS_KEY, payload);
 
-    // Device-layer cache (settings subset + sessions)
-    const deviceSettingsSubset = pickDeviceSettings(state.settings || {});
-    persistLocal(DEVICE_CACHE_KEY, {
-      settings: deviceSettingsSubset,
-      sessions: state.sessions,
-    });
-
-    // Cloud writes: user-level (shared) & device-level (local)
     const uid = state.auth?.user?.id;
     if (uid) {
       const deviceId = ensureDeviceId();
 
+      // Debounced cloud writes:
       debounceCloudSave(uid, () => {
-        const { kit, activeDrumId } = state;
-
-        // 1) Shared (user doc): sync only shared pieces (kit + activeDrumId)
-        //    We intentionally DO NOT sync settings or sessions here.
-        const sharedPatch = { kit, activeDrumId };
-
-        // 2) Device-scoped (device doc): settings subset + sessions
+        const sharedPatch = {
+          kit: state.kit,                 // SHARED
+          settings: state.settings,       // SHARED
+          activeDrumId: state.activeDrumId,
+        };
         const devicePatch = {
-          settings: deviceSettingsSubset,
-          sessions: state.sessions,
+          sessions: state.sessions,       // DEVICE-LOCAL
         };
 
         Promise.all([
           patchUserState(uid, sharedPatch),
-          saveKit(uid, kit),
+          saveKit(uid, state.kit),
           saveDeviceState(uid, deviceId, devicePatch),
         ]).catch(() => {});
       });
     }
-  }, [
-    state.auth,
-    state.kit,
-    state.settings,
-    state.sessions,
-    state.activeDrumId,
-  ]);
+  }, [state.auth, state.kit, state.settings, state.sessions, state.activeDrumId]);
 
   // Theme sync
   useEffect(() => {
@@ -516,10 +447,7 @@ export default function AppProvider({ children }) {
       addSession: (session) => dispatch({ type: "ADD_SESSION", session }),
 
       clearAll: () => {
-        try {
-          localStorage.removeItem(LS_KEY);
-          localStorage.removeItem(DEVICE_CACHE_KEY);
-        } catch {}
+        try { localStorage.removeItem(LS_KEY); } catch {}
         dispatch({ type: "CLEAR_ALL" });
       },
     }),
