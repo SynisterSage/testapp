@@ -6,7 +6,7 @@ import App from "./App.jsx";
 // ✅ load your styles (make sure these files exist under /src/styles/)
 import "./styles/tokens.css";
 import "./styles/global.css";
-import { Analytics } from "@vercel/analytics/react"
+
 // ✅ AppProvider is a DEFAULT export in your file
 import AppProvider from "./store/AppProvider.jsx";
 import { ToastProvider } from "./ui/ToastProvider.jsx";
