@@ -9,6 +9,7 @@ import Settings from "./pages/Settings.jsx";
 import Login from "./pages/Login.jsx";
 import Signup from "./pages/Signup.jsx";                 // ⬅️ new
 import ProtectedRoute from "./routes/ProtectedRoute.jsx";
+import { Analytics } from "@vercel/analytics/react"
 
 export default function App() {
   return (
