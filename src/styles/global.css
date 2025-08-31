@@ -867,11 +867,21 @@ input[type="range"] { width: 100%; }
   /* active & done chips use purple accent */
   .chip--active,
   .chip--done {
-    background: var(--accent);
+    background: var(--primary);
     border-color: rgba(139,140,251,0.55);
     color: #0b0f14;
   }
-  .chip--active { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.25); }
+  .chip--active { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.25); background: var(--accent);}
+  .signup-link {
+  text-decoration: none;      /* removes underline */
+  font-weight: 600;           /* makes it bolder */
+  color: #a78bfa;             /* pick your accent color */
+}
+
+.signup-link:hover {
+  color: #c4b5fd;             /* lighter on hover (optional) */
+}
+
   
   /* header accent */
   .tuner-head {

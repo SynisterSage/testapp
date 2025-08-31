@@ -172,7 +172,7 @@ export default function Settings() {
 
       {/* tiny footer */}
       <div className="settings-foot hint" style={{ textAlign: "center", marginTop: "15px"}}>
-        v0.0.8 • Beta Testing • Lex
+        v0.0.9 • Beta Testing • Lex
       </div>
     </div>
   );

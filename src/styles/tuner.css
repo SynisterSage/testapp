@@ -68,3 +68,227 @@
 .lug-label { font-size: 10px; text-anchor: middle; fill: var(--text-dim); }
 .lug-cents { font-size: 10px; text-anchor: middle; fill: #fff; opacity: .85; }
 .lug-check { fill: #fff; font-size: 12px; font-weight: 800; }
+/* =========================================================
+   LUG RING — refined idle + active + completion animations
+   (presentation only; respects reduced motion)
+   ========================================================= */
+
+:root[data-theme="light"] .lug-node-halo { background: transparent; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* --- OUTER RING (idle) --- */
+  .outer-ring-group { pointer-events: none; } /* visuals only */
+
+  .outer-ring {
+    fill: none;
+    stroke: url(#lr-outer-grad);
+    stroke-width: 3;
+    opacity: .75;
+    filter: drop-shadow(0 0 10px rgba(124,58,237,.25));
+  }
+
+  /* slow rotation of gradient (rotate the group around center) */
+  .outer-rotate {
+    transform-origin: center;
+    animation: lr-outer-rotate 20s linear infinite;
+  }
+  @keyframes lr-outer-rotate { to { transform: rotate(360deg); } }
+
+  /* outward sonar pulses every ~4s, very subtle */
+  .outer-pulse { transform-origin: center; }
+  .outer-ripple {
+    fill: none;
+    stroke: rgba(167,139,250,.22);
+    stroke-width: 2;
+    transform-origin: center;
+    animation: lr-outer-ripple 4s ease-out infinite;
+  }
+  .outer-ripple--late1 { animation-delay: .6s; }
+  .outer-ripple--late2 { animation-delay: 1.2s; }
+
+  @keyframes lr-outer-ripple {
+    0%   { transform: scale(1);     opacity: .35; }
+    70%  { transform: scale(1.25);  opacity: .06; }
+    100% { transform: scale(1.3);   opacity: 0; }
+  }
+
+  /* --- ACTIVE LUG breathing --- */
+  .lug-node-halo {
+    fill: rgba(139,92,246,.22);
+    animation: lr-halo-breathe 1.5s ease-in-out infinite;
+  }
+  @keyframes lr-halo-breathe {
+    0%,100% { transform: scale(1);   opacity: .65; }
+    50%     { transform: scale(1.08); opacity: .35; }
+  }
+
+  /* --- COMPLETION (on lock): pop + ring draw + glint --- */
+  .lug-node--locked { animation: lr-pop 3s ease-out; }
+  @keyframes lr-pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(.92); }
+    100% { transform: scale(1); }
+  }
+
+  .lug-lock-ring {
+    fill: none;
+    stroke: rgba(34,197,94,.95);
+    stroke-width: 2;
+    stroke-dasharray: 80 80;
+    stroke-dashoffset: 80;       /* start hidden */
+    animation: lr-ring-draw 0.95s ease-out forwards;
+    filter: drop-shadow(0 0 6px rgba(34,197,94,.35));
+  }
+  @keyframes lr-ring-draw { to { stroke-dashoffset: 0; } }
+
+  .lug-glint { pointer-events: none; }
+  .lug-glint-arc {
+    fill: none;
+    stroke: rgba(255,255,255,.45);
+    stroke-width: 1.25;
+    stroke-linecap: round;
+    stroke-dasharray: 50 80;
+    stroke-dashoffset: 50;
+    filter: drop-shadow(0 0 6px rgba(255,255,255,.25));
+    animation: lr-glint 420ms ease-out forwards;
+  }
+  .lug-glint-arc--delayed { animation-delay: 90ms; opacity: .75; }
+
+  @keyframes lr-glint {
+    0%   { stroke-dashoffset: 50; opacity: .65; }
+    80%  { stroke-dashoffset: 0;  opacity: .25; }
+    100% { opacity: 0; }
+  }
+}
+
+/* keep your existing look & hints */
+.lug-ring-outline { fill: none; stroke: rgba(124,58,237,.25); stroke-width: 2; }
+
+/* tone mapping you already had (retain) */
+.lug-node--high { filter: drop-shadow(0 -2px 8px rgba(248,113,113,.55)); }
+.lug-node--low  { filter: drop-shadow(0  2px 8px rgba(59,130,246,.5)); }
+
+/* cents settle (no idle shimmer) */
+.lug-cents { opacity: .75; transition: opacity .18s ease, transform .18s ease; }
+/* prevent pulse clipping */
+.lug-ring { overflow: visible; }
+
+/* ===== OUTER RING ===== */
+@media (prefers-reduced-motion: no-preference) {
+  .outer-ring-group { pointer-events: none; }
+
+  .outer-ring {
+    fill: none;
+    stroke: url(#lr-outer-grad);
+    stroke-width: 3;
+    opacity: .78;
+    filter: drop-shadow(0 0 10px rgba(124,58,237,.25));
+  }
+
+  /* slow rotation on the purple gradient */
+  .outer-rotate { transform-origin: center; animation: lr-outer-rotate 22s linear infinite; }
+  @keyframes lr-outer-rotate { to { transform: rotate(360deg); } }
+
+  /* faint outward pulses (no square edges) */
+  .outer-pulse { transform-origin: center; }
+  .outer-ripple {
+    fill: none;
+    stroke: rgba(167,139,250,.18);
+    stroke-width: 2;
+    transform-origin: center;
+    animation: lr-outer-ripple 4.2s ease-out infinite;
+  }
+  .outer-ripple--late1 { animation-delay: .6s; }
+  .outer-ripple--late2 { animation-delay: 1.2s; }
+  @keyframes lr-outer-ripple {
+    0%   { transform: scale(1);    opacity: .26; }
+    70%  { transform: scale(1.25); opacity: .06; }
+    100% { transform: scale(1.3);  opacity: 0; }
+  }
+
+  /* green sweep that animates ON when active lug locks, OFF when it advances */
+  .outer-ring-green {
+    fill: none;
+    stroke: url(#lr-green-grad);
+    stroke-width: 3.5;
+    filter: drop-shadow(0 0 8px rgba(34,197,94,.25));
+    /* sweep control via dashoffset (pathLength=100 on the element) */
+    stroke-dasharray: 100;
+    transition: stroke-dashoffset .55s ease, opacity .2s ease;
+  }
+  .outer-ring-green.is-on  { stroke-dashoffset: 0;   opacity: 1; }
+  .outer-ring-green.is-off { stroke-dashoffset: 100; opacity: 0; }
+}
+
+/* static outline (kept) */
+.lug-ring-outline { fill: none; stroke: rgba(124,58,237,.25); stroke-width: 10; }
+
+/* ===== ACTIVE LUG: in-place pulse ===== */
+@media (prefers-reduced-motion: no-preference) {
+  .lug-active-pulse {
+    fill: rgba(139,92,246,.22);
+    transform-origin: center;
+    animation: lr-inplace-pulse 1.35s ease-in-out infinite;
+  }
+  @keyframes lr-inplace-pulse {
+    0%,100% { transform: scale(1);   opacity: .55; }
+    50%     { transform: scale(1.12); opacity: .28; }
+  }
+}
+
+/* ===== COMPLETED (slower draw) ===== */
+@media (prefers-reduced-motion: no-preference) {
+  .lug-node--locked { animation: lr-pop 160ms ease-out; }
+  @keyframes lr-pop { 0%{transform:scale(1);} 60%{transform:scale(.92);} 100%{transform:scale(1);} }
+
+  .lug-lock-ring {
+    fill: none;
+    stroke: rgba(34,197,94,.95);
+    stroke-width: 2;
+    stroke-dasharray: 80 80;
+    stroke-dashoffset: 80;
+    animation: lr-ring-draw 420ms ease-out forwards; /* slowed a tad */
+    filter: drop-shadow(0 0 6px rgba(34,197,94,.35));
+  }
+  @keyframes lr-ring-draw { to { stroke-dashoffset: 0; } }
+
+  .lug-glint { pointer-events: none; }
+  .lug-glint-arc {
+    fill: none;
+    stroke: rgba(255,255,255,.45);
+    stroke-width: 1.25;
+    stroke-linecap: round;
+    stroke-dasharray: 50 80;
+    stroke-dashoffset: 50;
+    filter: drop-shadow(0 0 6px rgba(255,255,255,.22));
+    animation: lr-glint 540ms ease-out forwards;
+  }
+  .lug-glint-arc--delayed { animation-delay: 110ms; opacity: .78; }
+  @keyframes lr-glint {
+    0%   { stroke-dashoffset: 50; opacity: .65; }
+    80%  { stroke-dashoffset: 0;  opacity: .28; }
+    100% { opacity: 0; }
+  }
+}
+
+/* keep your hint styling */
+.lug-node--high { filter: drop-shadow(0 -2px 8px rgba(248,113,113,.55)); }
+.lug-node--low  { filter: drop-shadow(0  2px 8px rgba(59,130,246,.5)); }
+.lug-cents { opacity: .75; transition: opacity .18s ease, transform .18s ease; }
+.lug-center { pointer-events: none; }
+.lug-center-bg {
+  fill: rgba(9,12,16,.72);
+  stroke: rgba(124,58,237,.35);
+  stroke-width: 1;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,.35));
+}
+.lug-center-text {
+  font-size: 13px;
+  font-weight: 800;
+  fill: #eae9ff;
+  letter-spacing: .2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lug-center { animation: lr-center-pop .25s ease-out; }
+  @keyframes lr-center-pop { from { opacity:0; transform:scale(.96) } to { opacity:1; transform:scale(1) } }
+}

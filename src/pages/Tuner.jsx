@@ -103,7 +103,8 @@ export default function Tuner() {
   // head + lug
   const [head, setHead] = useState("batter");
   const headRef = useRef(head); useEffect(() => { headRef.current = head; }, [head]);
-
+const [centerMsg, setCenterMsg] = useState("");
+const centerTimerRef = useRef(null);
   const lugCount = useMemo(() => defaultLugsFor(active), [active]);
   const lugCountRef = useRef(lugCount); useEffect(()=>{ lugCountRef.current = lugCount; }, [lugCount]);
   const order = useMemo(() => lugOrderSequential(lugCount), [lugCount]);

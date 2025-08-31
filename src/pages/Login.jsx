@@ -111,10 +111,7 @@ export default function Login() {
           <span className="ot-btn-label">Sign In</span>
           <span className="ot-btn-spinner" aria-hidden="true" />
         </button>
-{/* ⬇️ new link to signup */}
-<p className="ot-sub" style={{ marginTop: 12, textAlign: "center" }}>
-  New here? <Link to="/signup">Create an account</Link>
-</p>
+
 
         <div className="ot-divider"><span>or</span></div>
 
@@ -125,6 +122,12 @@ export default function Login() {
         >
           Continue with Google
         </button>
+        <p className="ot-sub" style={{ marginTop: 12, textAlign: "center" }}>
+  New here?{" "}
+  <Link to="/signup" className="signup-link">
+    Create an account
+  </Link>
+</p>
       </div>
 
       {loading && (

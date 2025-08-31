@@ -137,9 +137,12 @@ export default function Signup() {
           Continue with Google
         </button>
 
-        <p className="ot-sub" style={{ marginTop: 12 }}>
-          Already have an account? <Link to="/login">Sign in</Link>
-        </p>
+       <p className="ot-sub" style={{ marginTop: 12, textAlign: "center" }}>
+         Have an account?{" "}
+         <Link to="/login" className="signup-link">
+           Back to Sign In
+         </Link>
+       </p>
       </div>
 
       {loading && (
