@@ -1,7 +1,6 @@
 import { useLocation } from "react-router-dom";
 import TabBar from "./TabBar.jsx";
 import { ToastViewport } from "../ui/ToastProvider.jsx";
-import { Analytics } from "@vercel/analytics/next"
 
 export default function RootLayout({ children }) {
   const { pathname } = useLocation();
